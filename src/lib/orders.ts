@@ -1,20 +1,8 @@
-import type { CraftCategory, OrderPayload, Specifications } from '@/lib/types';
+import { emptySpecifications } from '@/lib/spec/catalog';
+import type { CraftCategory, OrderPayload } from '@/lib/types';
 import { newId, nowIso } from '@/lib/utils/format';
 
 export const DEFAULT_CRAFTER_ID = process.env.CRAFTER_ID ?? 'crafter-demo-01';
-
-export function emptySpecifications(): Specifications {
-  return {
-    silhouette: '',
-    target_capacity: '',
-    dimensions_cm: { length: 0, width: 0, height: 0 },
-    exterior_leather: '',
-    lining_material: '',
-    structure_temper: '',
-    stitching_method: '',
-    edge_finish: '',
-  };
-}
 
 export function createDraftOrder(phone: string, clientName: string, category: CraftCategory = 'bespoke_bag'): OrderPayload {
   return {

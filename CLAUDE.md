@@ -11,6 +11,9 @@ CraftMind AI is a Gen AI-powered B2B SaaS designed for bespoke leathercraft and 
   - Gemini 1.5 Flash (Requirement Parsing, Structured Output, Fast Classification)
   - Gemini 1.5 Pro (Complex Pattern Breakdown & Geometrical BOM Reasoning)
   - Imagen 3 / Gemini Multimodal (Visual Concept Mockup Render Generator)
+  - Note: the Gemini 1.5 and Imagen 3 IDs are retired. Code uses role-based chains in `src/lib/gcp/gemini.ts`
+    (`MODEL_CHAINS.flash` / `.pro` / `.fast`, env-overridable) with retry + fallback; Imagen only works on Vertex AI.
+    Every agent has a deterministic offline fallback, so never make a feature depend on an AI call succeeding.
 - Database & State: Firebase Firestore (Session Buffer, Inventory, Draft Orders)
 - Task Queue / Debouncing: Cloud Tasks / In-Memory Adaptive Debounce Timer
 - Deployment: Google Cloud Run / Firebase Hosting
@@ -42,8 +45,11 @@ craftmind-ai-gcp/
 │   │       │   ├── orchestrator/route.ts # Multi-Agent Execution Engine
 │   │       │   ├── mock-generator/route.ts # Imagen 3 / Multimodal Mockup
 │   │       │   └── pattern-bom/route.ts    # Pattern & SqFt Calculator
-│   │       └── orders/
-│   │           └── [id]/approve/route.ts # Crafter Approval & WA Outbound
+│   │       ├── orders/
+│   │       │   ├── [id]/approve/route.ts     # Crafter Approval & WA Outbound
+│   │       │   ├── [id]/recalculate/route.ts # Crafter spec correction → BOM, SqFt, labor & price recalculation
+│   │       │   └── [id]/takeover/route.ts    # AI_COPILOT / PARTIAL_PAUSE / FULL_MANUAL switch
+│   │       └── scenarios/route.ts            # Test scenarios (from scenarios.csv) for the simulator
 │   ├── lib/
 │   │   ├── gcp/
 │   │   │   ├── gemini.ts             # Google Gen AI SDK Initialization & Wrappers
@@ -54,6 +60,9 @@ craftmind-ai-gcp/
 │   │   │   ├── visual-agent.ts       # Agent 2: Studio Mockup Generator
 │   │   │   ├── inventory-agent.ts    # Agent 3: Stock Matcher & Sourcing
 │   │   │   └── pattern-agent.ts      # Agent 4: 2D Component & BOM Breakdown
+│   │   ├── spec/
+│   │   │   ├── catalog.ts            # Construction types, vision cues, pocket defaults, gathering checklist & planner
+│   │   │   └── describe.ts           # Spec card / pocket / customization text for WhatsApp
 │   │   ├── types/
 │   │   │   └── index.ts              # TypeScript Interfaces for Orders, Specs, BOM, Takeover
 │   │   └── utils/
@@ -65,7 +74,13 @@ craftmind-ai-gcp/
 │       └── dashboard/
 │           ├── order-card.tsx
 │           ├── side-by-side-preview.tsx # Original Sketch vs AI Mockup
+│           ├── spec-editor.tsx        # Editable specification form + "Recalculate BOM & Price"
+│           ├── order-detail.tsx       # Review screen incl. mockup prompt-adjustment card
 │           └── bom-table.tsx          # Component Breakdown Table
+├── scenarios.csv                      # QA matrix (SCN-01..10), source of truth for E2E tests
+└── scripts/
+    ├── build-scenarios.mjs            # scenarios.csv → src/lib/data/scenarios.json
+    └── run-scenarios.mjs              # Plays every scenario against a running server and asserts
 ```
 
 ## System Interfaces & JSON Schema Definitions
@@ -93,6 +108,26 @@ export interface OrderPayload {
     structure_temper: string;
     stitching_method: string;
     edge_finish: string;
+    // precise form factor — see CONSTRUCTIONS in src/lib/spec/catalog.ts
+    construction_type: 'UNSPECIFIED' | 'FLAT_CARD_HOLDER' | 'PATTERNED_CARD_HOLDER' | 'BIFOLD_WALLET' | 'TRIFOLD_WALLET'
+      | 'ACCORDION_WALLET' | 'ZIP_AROUND_LONG_WALLET' | 'SLING_BAG' | 'CROSSBODY_CAMERA_BAG' | 'MESSENGER_BAG'
+      | 'SLOUCHY_TOTE' | 'STRUCTURED_TOTE' | 'BACKPACK' | 'EXECUTIVE_BRIEFCASE' | 'PADEL_RACKET_BAG'
+      | 'HYBRID_BACKPACK_TOTE' | 'CLUTCH' | 'DERBY_SHOES' | 'OXFORD_SHOES' | 'LOAFERS' | 'CHELSEA_BOOTS' | 'OTHER_CUSTOM';
+    pocket_layout: {
+      front_slots: number; back_slots: number; central_pockets: number; cash_compartments: number;
+      id_window: boolean; coin_zip_pocket: boolean; interior_zip_pockets: number; exterior_pockets: number;
+    };
+    finish: {
+      edge_treatment: 'UNSPECIFIED' | 'BURNISHED' | 'EDGE_PAINT' | 'RAW' | 'TURNED_EDGE';
+      surface_finish: string; color_finish: string;
+      thread_color: string; thread_material: string; stitch_pattern: string;
+      zipper: string; strap: string; hardware_notes: string;
+    };
+    customization: {
+      type: 'UNSPECIFIED' | 'NONE' | 'EMBOSS_INITIALS' | 'EMBOSS_LOGO' | 'LASER_ENGRAVING';
+      detail: string;     // e.g. "R.W", "batik mega mendung"
+      placement: string;  // e.g. "pojok kanan bawah"
+    };
   };
   material_sourcing: {
     status: 'IN_STOCK' | 'SPECIAL_SOURCING_NEEDED';
@@ -114,9 +149,21 @@ export interface OrderPayload {
   media_assets: {
     original_sketch_url?: string;
     ai_generated_mockup_url?: string;
+    mockup_engine?: 'gemini-image' | 'imagen' | 'offline-svg';
+    mockup_feedback?: string[];   // crafter prompt adjustments, oldest first
+  };
+  intake?: {                      // multi-turn gathering state, owned by the orchestrator
+    asked_topics: string[];       // each optional topic is asked at most once
+    last_asked: string[];         // topics in the last AI bubble (to read short answers)
+    vision_notes?: string;        // what the vision model saw in the sketch/photo
+    processed_message_id?: string;
+    question_rounds: number;
   };
 }
 ```
+
+Unset values are `""` / `0` / `false` / `'UNSPECIFIED'` — never `undefined`. Orders written before a schema change are
+read through `normalizeSpecifications()`; always use it before touching nested spec fields.
 
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.
@@ -128,5 +175,27 @@ export interface OrderPayload {
 5. Build the API routes using Gemini Flash for structured JSON extraction via Gemini's `responseSchema` feature.
 6. Create an interactive `WA Chat Simulator` component on the frontend with a toggle switch to simulate switching between AI Co-Pilot Mode and Human Takeover Mode.
 7. Build the `Side-by-Side Review Screen` in the dashboard to highlight AI innovation during judging.
+
+## System Enhancement Rules (v2)
+8. Vision & spec accuracy (Agent 1): the intake prompt is built from `CONSTRUCTIONS[].vision_cue` (`visionGuide()`), so a new
+   form factor is added in `src/lib/spec/catalog.ts` only. The photo outranks the words: a sleeve with no fold line is
+   `FLAT_CARD_HOLDER`, never `BIFOLD_WALLET`. Gemini returns `vision_notes`, shown to the crafter on the review screen.
+9. Editable specification (HITL): the review screen's spec form (`spec-editor.tsx`) saves nothing until
+   "Recalculate BOM & Price" → `POST /api/orders/[id]/recalculate`, which replaces the edited fields, recomputes pattern
+   pieces, SqFt, hardware, labor, stock match and quote deterministically (`use_ai: true` for Gemini Pro), and leaves the
+   mockup and conversation untouched. It refuses (422) while a required topic is empty and (409) after approval.
+10. Mockup re-generation (Agent 2): `POST /api/ai/mock-generator { order_id, adjustment }` appends the crafter feedback to
+    the prompt as highest priority, passes the current mockup (and sketch) as reference images, and only updates
+    `media_assets`. The offline SVG cannot apply free text; the response then carries a `note` the UI shows.
+11. Multi-turn gathering: WHAT to ask is decided by `planConversation()` (deterministic), HOW it is phrased by Gemini
+    (`composeReply`, template fallback). Required topics first (`construction`, `dimensions`, `leather`, plus
+    `card_layout` for wallets/card holders), at most 2 questions per bubble, then each form factor's optional
+    `detail_topics` (embossing, thread, lining, edge, zipper, strap, hardware) once each. "Terserah" defers a topic to
+    workshop defaults; "itu saja" finishes. The spec card is locked only when the plan is `ready`; later messages are
+    corrections that re-quote (`+3 cm`, `tambah saku depan`) instead of reopening questions.
+12. Testing: `scenarios.csv` is the QA matrix. After editing it run `npm run scenarios:build`; verify with
+    `npm run scenarios` against a running server (see WALKTHROUGH.md §6). Keep all 10 passing offline
+    (`GEMINI_API_KEY=` blank) as well as online.
+13. Before finishing any change: `npm run typecheck && npm run lint && npm run build`.
 
 @AGENTS.md

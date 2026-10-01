@@ -8,6 +8,7 @@ import type { CategoryPreset, InventoryItem, MaterialSourcing } from '@/lib/type
 
 const TYPE_SYNONYMS: Array<[string, RegExp]> = [
   ['veg-tan', /veg[\s-]?tan|vegetable|nabati|samak nabati/i],
+  ['chrome-tan', /chrome[\s-]?tan|chrome/i],
   ['epsom', /epsom/i],
   ['pull-up', /pull[\s-]?up/i],
   ['crazy horse', /crazy[\s-]?horse/i],
@@ -16,6 +17,10 @@ const TYPE_SYNONYMS: Array<[string, RegExp]> = [
 ];
 
 const COLOR_SYNONYMS: Array<[string, RegExp]> = [
+  ['olive green', /olive|zaitun/i],
+  ['espresso brown', /espresso/i],
+  ['teal', /tosca|teal|turquoise/i],
+  ['red', /\bred\b|merah|burgundy/i],
   ['dark brown', /dark brown|coklat tua|cokelat tua/i],
   ['black', /black|hitam/i],
   ['navy', /navy|biru dongker|biru/i],
@@ -26,10 +31,11 @@ const COLOR_SYNONYMS: Array<[string, RegExp]> = [
   ['brown', /brown|coklat|cokelat/i],
 ];
 
+/** Special-sourcing fee and extra lead time. UNKNOWN = not stocked at all: assume a local tannery can supply it. */
 export const SOURCING_RULES = {
-  LOCAL: { fee_idr: 150_000, lead_days: 5 },
+  LOCAL: { fee_idr: 70_000, lead_days: 5 },
   IMPORT: { fee_idr: 450_000, lead_days: 14 },
-  UNKNOWN: { fee_idr: 250_000, lead_days: 10 },
+  UNKNOWN: { fee_idr: 70_000, lead_days: 5 },
 } as const;
 
 export interface InventoryMatch {

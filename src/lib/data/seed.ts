@@ -1,6 +1,7 @@
 import { templatePattern } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { createDraftOrder } from '@/lib/orders';
+import { emptySpecifications } from '@/lib/spec/catalog';
 import type { CategoryPreset, ChatMessage, Conversation, InventoryItem, OrderPayload, Specifications } from '@/lib/types';
 import { renderConceptSvg, renderDemoSketchSvg } from '@/lib/utils/svg';
 
@@ -26,6 +27,11 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
   bag.order_id = 'ORD-DEMO-BAG01';
   bag.created_at = minutesAgo(95);
   const bagSpec: Specifications = {
+    ...emptySpecifications(),
+    construction_type: 'SLING_BAG',
+    pocket_layout: { ...emptySpecifications().pocket_layout, interior_zip_pockets: 1 },
+    finish: { ...emptySpecifications().finish, edge_treatment: 'BURNISHED', thread_color: 'natural', thread_material: 'waxed linen', stitch_pattern: 'saddle stitch', strap: 'Detachable full-leather strap', hardware_notes: 'Gold turn-lock clasp' },
+    customization: { type: 'EMBOSS_INITIALS', detail: 'RW', placement: 'bottom-right corner' },
     silhouette: 'Sling bag with flap & turn-lock',
     target_capacity: 'Muat iPad mini, dompet & HP',
     dimensions_cm: { length: 30, width: 10, height: 22 },
@@ -35,7 +41,7 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
     stitching_method: 'Hand saddle stitch, 3.38mm pitch',
     edge_finish: 'Burnished edge',
   };
-  const bagQuote = assembleQuote(templatePattern('bespoke_bag', bagSpec, preset('bespoke_bag')), bagSpec, inventory, preset('bespoke_bag'));
+  const bagQuote = assembleQuote(templatePattern(bagSpec, preset('bespoke_bag')), bagSpec, inventory, preset('bespoke_bag'));
   Object.assign(bag, {
     session_state: 'PENDING_CRAFTER_APPROVAL',
     specifications: bagSpec,
@@ -65,6 +71,7 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
     escalation_reason: 'CLIENT_REQUEST',
     specifications: {
       ...wallet.specifications,
+      construction_type: 'BIFOLD_WALLET',
       silhouette: 'Bifold wallet',
       exterior_leather: 'Epsom Etoupe',
       ...preset('bespoke_wallet').defaults,
@@ -83,13 +90,15 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
   shoes.order_id = 'ORD-DEMO-SHO01';
   shoes.created_at = minutesAgo(60 * 24 * 6);
   const shoeSpec: Specifications = {
+    ...emptySpecifications(),
+    construction_type: 'DERBY_SHOES',
     silhouette: 'Derby',
     target_capacity: 'EU 42, wide fit',
     dimensions_cm: { length: 28, width: 10.5, height: 12 },
     exterior_leather: 'Crazy Horse Cognac 1.8mm',
     ...preset('bespoke_shoes').defaults,
   };
-  const shoeQuote = assembleQuote(templatePattern('bespoke_shoes', shoeSpec, preset('bespoke_shoes')), shoeSpec, inventory, preset('bespoke_shoes'));
+  const shoeQuote = assembleQuote(templatePattern(shoeSpec, preset('bespoke_shoes')), shoeSpec, inventory, preset('bespoke_shoes'));
   Object.assign(shoes, {
     session_state: 'APPROVED',
     specifications: shoeSpec,

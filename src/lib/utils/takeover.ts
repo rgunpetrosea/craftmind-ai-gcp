@@ -14,8 +14,17 @@ import type { AutomationMode, EscalationReason, OrderPayload } from '@/lib/types
 
 export const ESCALATION_KEYWORDS = ['admin', 'crafter', 'manusia', 'pemilik'] as const;
 
+/** Crafter first names that mean "let me talk to the person" (comma-separated env, e.g. "fendy,budi"). */
+const CRAFTER_NAMES = (process.env.CRAFTER_NAMES ?? 'fendy')
+  .split(',')
+  .map((n) => n.trim().toLowerCase())
+  .filter(Boolean);
+
 // Leading word boundary only, so Indonesian suffixes still match ("adminnya", "pemiliknya").
-const ESCALATION_PATTERN = new RegExp(`\\b(${ESCALATION_KEYWORDS.join('|')})`, 'i');
+const KEYWORD_PATTERN = new RegExp(`\\b(${ESCALATION_KEYWORDS.join('|')})`, 'i');
+// "ngomong sama ...", "bicara langsung", "mau telepon", "hubungi ..." : asking for a person, however they phrase it.
+const HUMAN_INTENT_PATTERN = /\b(ngomong|bicara|berbicara|ngobrol|chat|telepon|telpon|hubungi|kontak)\s+(sama|dengan|langsung|ke|dgn|sm)\b/i;
+const NAME_PATTERN = CRAFTER_NAMES.length ? new RegExp(`\\b(?:mas|pak|bu|mbak|kak)\\s+(${CRAFTER_NAMES.join('|')})\\b`, 'i') : null;
 
 export const PARTIAL_PAUSE_MINUTES = Number(process.env.PARTIAL_PAUSE_MINUTES ?? 30);
 export const CONFUSION_STRIKE_LIMIT = Number(process.env.CONFUSION_STRIKE_LIMIT ?? 3);
@@ -26,9 +35,15 @@ export const HANDOFF_MESSAGES: Record<EscalationReason, string> = {
   CRAFTER_OVERRIDE: '',
 };
 
+/** Returns the trigger that matched (keyword, phrase or crafter name), or null. */
 export function detectEscalationKeyword(text: string | undefined): string | null {
-  const match = text ? ESCALATION_PATTERN.exec(text) : null;
-  return match ? match[1].toLowerCase() : null;
+  if (!text) return null;
+  const keyword = KEYWORD_PATTERN.exec(text);
+  if (keyword) return keyword[1].toLowerCase();
+  const name = NAME_PATTERN?.exec(text);
+  if (name) return name[0].toLowerCase();
+  const phrase = HUMAN_INTENT_PATTERN.exec(text);
+  return phrase ? phrase[0].toLowerCase() : null;
 }
 
 export function isPauseActive(order: OrderPayload, now = new Date()): boolean {
