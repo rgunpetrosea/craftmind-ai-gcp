@@ -1,55 +1,119 @@
 'use client';
 
-import { AlertTriangle, ClipboardList, Eye, Loader2, RotateCcw, Calculator } from 'lucide-react';
+import { AlertTriangle, Calculator, ClipboardList, Eye, Loader2, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
-import { CONSTRUCTIONS, EDGE_LABEL, emptyPockets, getConstruction, normalizeSpecifications, requiredTopics, TOPICS } from '@/lib/spec/catalog';
-import type { ConstructionType, CraftCategory, CustomizationType, EdgeTreatment, OrderPayload, PocketLayout, Specifications } from '@/lib/types';
+import {
+  attrs,
+  blankValue,
+  CATEGORIES,
+  changeCategory,
+  constructionDef,
+  isFieldRelevant,
+  isFieldSet,
+  missingRequired,
+  normalizeSpecifications,
+  schemaOf,
+  topicsFor,
+} from '@/lib/spec/catalog';
+import { GROUP_LABEL, type AnyField, type FieldGroup } from '@/lib/spec/fields';
+import type { AttributeValue, ConstructionType, CraftCategory, CustomField, Dimensions, OrderPayload, Specifications } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 
-const CATEGORY_LABEL: Record<CraftCategory, string> = { bespoke_bag: 'Bags', bespoke_wallet: 'Wallets & card holders', bespoke_shoes: 'Shoes' };
+const inputCls =
+  'mt-1 w-full rounded-lg bg-white px-2.5 py-1.5 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500 disabled:bg-stone-50 disabled:text-stone-500';
+const GROUP_ORDER = Object.keys(GROUP_LABEL) as FieldGroup[];
+const NOTES_KEY = '__notes';
 
-const CUSTOMIZATION_OPTIONS: Array<[CustomizationType, string]> = [
-  ['UNSPECIFIED', 'Not discussed'],
-  ['NONE', 'None'],
-  ['EMBOSS_INITIALS', 'Emboss initials'],
-  ['EMBOSS_LOGO', 'Emboss logo'],
-  ['LASER_ENGRAVING', 'Laser engraving'],
-];
-
-const POCKET_FIELDS: Array<[Exclude<keyof PocketLayout, 'id_window' | 'coin_zip_pocket'>, string]> = [
-  ['front_slots', 'Front card slots'],
-  ['back_slots', 'Back card slots'],
-  ['central_pockets', 'Central pocket'],
-  ['cash_compartments', 'Cash compartments'],
-  ['interior_zip_pockets', 'Interior zip pockets'],
-  ['exterior_pockets', 'Exterior pockets'],
-];
-
-const inputCls = 'mt-1 w-full rounded-lg bg-white px-2.5 py-1.5 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500 disabled:bg-stone-50 disabled:text-stone-500';
-
-function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+function Label({ children, required, onRemove }: { children: ReactNode; required?: boolean; onRemove?: () => void }) {
   return (
-    <label className={cn('block text-sm', className)}>
-      <span className="text-[11px] uppercase tracking-wide text-stone-500">{label}</span>
-      {children}
-    </label>
+    <span className="flex items-center justify-between text-[11px] uppercase tracking-wide text-stone-500">
+      <span>
+        {children}
+        {required && <span className="text-amber-600"> *</span>}
+      </span>
+      {onRemove && (
+        <button type="button" onClick={onRemove} title="Clear & hide this field" className="rounded p-0.5 text-stone-300 hover:bg-stone-100 hover:text-stone-600">
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <fieldset className="space-y-3">
-      <legend className="mb-1 text-xs font-semibold text-leather-700">{title}</legend>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{children}</div>
-    </fieldset>
-  );
+/** One input for one schema field; the control is chosen by the field type. */
+function FieldInput({ field, value, disabled, onChange }: { field: AnyField; value: AttributeValue; disabled: boolean; onChange: (v: AttributeValue) => void }) {
+  switch (field.type) {
+    case 'text':
+      return <input className={inputCls} disabled={disabled} value={value as string} placeholder={field.placeholder} onChange={(e) => onChange(e.target.value)} />;
+    case 'number':
+      return (
+        <div className="relative">
+          <input
+            type="number"
+            min={0}
+            step={field.step ?? 1}
+            className={cn(inputCls, field.unit && 'pr-12')}
+            disabled={disabled}
+            value={(value as number) || ''}
+            onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+          />
+          {field.unit && <span className="pointer-events-none absolute right-2.5 top-1/2 mt-0.5 -translate-y-1/2 text-xs text-stone-400">{field.unit}</span>}
+        </div>
+      );
+    case 'boolean':
+      return (
+        <label className="mt-2 flex items-center gap-2 text-sm text-stone-700">
+          <input type="checkbox" disabled={disabled} checked={value as boolean} onChange={(e) => onChange(e.target.checked)} /> Yes
+        </label>
+      );
+    case 'enum':
+      return (
+        <select className={inputCls} disabled={disabled} value={value as string} onChange={(e) => onChange(e.target.value)}>
+          <option value="UNSPECIFIED">— not chosen —</option>
+          {Object.entries(field.options as Record<string, string>).map(([k, label]) => (
+            <option key={k} value={k}>
+              {label}
+            </option>
+          ))}
+        </select>
+      );
+    case 'dimensions': {
+      const d = value as Dimensions;
+      const axes: Array<[keyof Dimensions, string]> = [
+        ['length', field.axis_labels?.length ?? 'L'],
+        ['width', field.axis_labels?.width ?? 'W'],
+        ['height', field.axis_labels?.height ?? 'H'],
+      ];
+      return (
+        <div className="mt-1 grid grid-cols-3 gap-2">
+          {axes.map(([axis, label]) => (
+            <div key={axis} className="relative">
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                aria-label={`${field.label} ${axis}`}
+                className="w-full rounded-lg bg-white py-1.5 pl-7 pr-2 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500 disabled:bg-stone-50"
+                disabled={disabled}
+                value={d[axis] || ''}
+                onChange={(e) => onChange({ ...d, [axis]: e.target.value === '' ? 0 : Number(e.target.value) })}
+              />
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-stone-400">{label}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+  }
 }
 
 /**
- * The structured specification as an editable form. The crafter corrects whatever the AI got wrong
- * (e.g. Bifold → Flat card holder) and presses "Recalculate BOM & Price"; nothing is saved until then.
+ * Category-aware specification form. Only the active category's schema is rendered, and of that only fields that are
+ * relevant to the form factor AND either filled or required; everything else is one click away under "+ Add field".
+ * Free-form requests go into custom fields. Nothing is saved until "Recalculate BOM & Price".
  */
 export function SpecEditor({
   order,
@@ -58,57 +122,72 @@ export function SpecEditor({
 }: {
   order: OrderPayload;
   busy: boolean;
-  onRecalculate: (spec: Specifications, category: CraftCategory) => Promise<boolean>;
+  onRecalculate: (spec: Specifications) => Promise<boolean>;
 }) {
-  const server = normalizeSpecifications(order.specifications);
   const [draft, setDraft] = useState<Specifications | null>(null);
-  const spec = draft ?? server;
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
+  const spec = draft ?? normalizeSpecifications(order.specifications);
+  const schema = schemaOf(spec.category);
   const locked = order.session_state === 'APPROVED';
   const dirty = draft !== null;
 
-  const patch = (fn: (s: Specifications) => void) => {
+  const update = (fn: (s: Specifications) => Specifications | void) => {
     const next = structuredClone(spec);
-    fn(next);
-    setDraft(next);
+    setDraft(fn(next) ?? next);
   };
+  const setAttr = (key: string, value: AttributeValue) => update((s) => void (attrs(s)[key] = value));
 
-  const missing = requiredTopics(spec).filter((t) => !TOPICS[t].isFilled(spec));
-  const category = getConstruction(spec.construction_type).category;
-  const num = (v: string) => (v === '' ? 0 : Number(v));
+  const missing = missingRequired(spec, order.intake);
+  const requiredKeys = new Set(topicsFor(spec).filter((t) => t.required).flatMap((t) => t.fields));
+  const visible = (key: string) => isFieldRelevant(spec, key) && (isFieldSet(spec, key) || requiredKeys.has(key) || pinned.has(key));
+  const hidden = Object.entries(schema.fields).filter(([key]) => isFieldRelevant(spec, key) && !visible(key));
+  const showNotes = spec.notes.trim() !== '' || pinned.has(NOTES_KEY);
 
-  const text = (label: string, get: (s: Specifications) => string, set: (s: Specifications, v: string) => void, className?: string) => (
-    <Field label={label} className={className}>
-      <input className={inputCls} disabled={locked} value={get(spec)} onChange={(e) => patch((s) => set(s, e.target.value))} />
-    </Field>
-  );
+  function switchCategory(category: CraftCategory) {
+    setPinned(new Set());
+    setDraft(changeCategory(spec, category));
+  }
 
-  const dimension = (label: string, key: keyof Specifications['dimensions_cm']) => (
-    <Field label={label}>
-      <input
-        type="number"
-        min={0}
-        step="0.1"
-        className={inputCls}
-        disabled={locked}
-        value={spec.dimensions_cm[key] || ''}
-        onChange={(e) => patch((s) => void (s.dimensions_cm[key] = num(e.target.value)))}
-      />
-    </Field>
-  );
+  function switchConstruction(id: ConstructionType) {
+    update((s) => {
+      s.construction_type = id as typeof s.construction_type;
+      // pre-fill the form factor's typical values into fields that are still empty
+      const defaults = (constructionDef(id)?.defaults ?? {}) as Record<string, AttributeValue>;
+      for (const [k, v] of Object.entries(defaults)) if (!isFieldSet(s, k)) attrs(s)[k] = structuredClone(v);
+    });
+  }
+
+  function removeField(key: string) {
+    setPinned((p) => new Set([...p].filter((k) => k !== key)));
+    if (key === NOTES_KEY) update((s) => void (s.notes = ''));
+    else setAttr(key, blankValue(schema.fields[key]));
+  }
+
+  const setCustom = (i: number, patch: Partial<CustomField>) => update((s) => void (s.custom_fields[i] = { ...s.custom_fields[i], ...patch, source: 'CRAFTER' }));
+
+  const groups = GROUP_ORDER.map((g) => ({ group: g, keys: Object.entries(schema.fields).filter(([k, f]) => f.group === g && visible(k)).map(([k]) => k) })).filter((g) => g.keys.length);
 
   return (
     <Card>
       <CardHeader
-        title="Structured specification (editable)"
+        title="Specification"
         icon={<ClipboardList className="h-4 w-4 text-leather-500" />}
         action={
           <div className="flex items-center gap-2">
             {dirty && (
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDraft(null)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setDraft(null);
+                  setPinned(new Set());
+                }}
+              >
                 <RotateCcw className="h-3.5 w-3.5" /> Discard
               </Button>
             )}
-            <Button size="sm" disabled={busy || locked || missing.length > 0} onClick={async () => (await onRecalculate(spec, category)) && setDraft(null)}>
+            <Button size="sm" disabled={busy || locked || missing.length > 0} onClick={async () => (await onRecalculate(spec)) && setDraft(null)}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />} Recalculate BOM & Price
             </Button>
           </div>
@@ -126,124 +205,136 @@ export function SpecEditor({
         {locked && <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">Approved orders are read-only.</p>}
         {!locked && missing.length > 0 && (
           <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
-            <AlertTriangle className="h-3.5 w-3.5" /> Fill these before recalculating: {missing.join(', ')}
+            <AlertTriangle className="h-3.5 w-3.5" /> Fill these before recalculating: {missing.map((t) => t.label).join(', ')}
           </p>
         )}
 
-        <Group title="Form factor">
-          <Field label="Construction type" className="col-span-2">
-            <select
-              className={inputCls}
-              disabled={locked}
-              value={spec.construction_type}
-              onChange={(e) =>
-                patch((s) => {
-                  const def = getConstruction(e.target.value as ConstructionType);
-                  const wasLabel = getConstruction(s.construction_type).label;
-                  s.construction_type = def.id;
-                  if (!s.silhouette.trim() || s.silhouette === wasLabel) s.silhouette = def.id === 'UNSPECIFIED' ? '' : def.label;
-                  // a new form factor starts from its usual layout unless pockets were already described
-                  const empty = emptyPockets();
-                  if (JSON.stringify(s.pocket_layout) === JSON.stringify(empty)) Object.assign(s.pocket_layout, def.default_pockets);
-                  if (!s.dimensions_cm.length && !s.dimensions_cm.height) s.dimensions_cm = { ...def.default_dimensions };
-                })
-              }
-            >
+        {/* Category & form factor */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block text-sm">
+            <Label required>Craft category</Label>
+            <select className={inputCls} disabled={locked} value={spec.category} onChange={(e) => switchCategory(e.target.value as CraftCategory)}>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {schemaOf(c).label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <Label required>Form factor</Label>
+            <select className={inputCls} disabled={locked} value={spec.construction_type} onChange={(e) => switchConstruction(e.target.value as ConstructionType)}>
               <option value="UNSPECIFIED">— not identified —</option>
-              {(Object.keys(CATEGORY_LABEL) as CraftCategory[]).map((cat) => (
-                <optgroup key={cat} label={CATEGORY_LABEL[cat]}>
-                  {CONSTRUCTIONS.filter((c) => c.category === cat).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </optgroup>
+              {schema.constructions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
               ))}
             </select>
-          </Field>
-          {text('Silhouette / name', (s) => s.silhouette, (s, v) => void (s.silhouette = v))}
-          {text('Capacity / fits', (s) => s.target_capacity, (s, v) => void (s.target_capacity = v), 'col-span-2 sm:col-span-3')}
-        </Group>
+          </label>
+          <label className="block text-sm">
+            <Label>Product name</Label>
+            <input className={inputCls} disabled={locked} value={spec.model_name} placeholder="Client-facing name" onChange={(e) => update((s) => void (s.model_name = e.target.value))} />
+          </label>
+        </div>
 
-        <Group title="Dimensions (cm)">
-          {dimension('Length', 'length')}
-          {dimension('Width / depth', 'width')}
-          {dimension('Height', 'height')}
-        </Group>
+        {/* Category fields, grouped */}
+        {groups.map(({ group, keys }) => (
+          <fieldset key={group}>
+            <legend className="mb-2 text-xs font-semibold text-leather-700">{GROUP_LABEL[group]}</legend>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {keys.map((key) => {
+                const field = schema.fields[key];
+                const required = requiredKeys.has(key);
+                return (
+                  <label key={key} className={cn('block text-sm', field.type === 'dimensions' && 'col-span-2 sm:col-span-3')}>
+                    <Label required={required} onRemove={!required && !locked ? () => removeField(key) : undefined}>
+                      {field.label}
+                      {field.type === 'dimensions' && field.unit ? ` (${field.unit})` : ''}
+                    </Label>
+                    <FieldInput field={field} value={attrs(spec)[key]} disabled={locked} onChange={(v) => setAttr(key, v)} />
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ))}
 
-        <Group title="Leather & structure">
-          {text('Exterior leather', (s) => s.exterior_leather, (s, v) => void (s.exterior_leather = v), 'col-span-2')}
-          {text('Color finish', (s) => s.finish.color_finish, (s, v) => void (s.finish.color_finish = v))}
-          {text('Surface finish', (s) => s.finish.surface_finish, (s, v) => void (s.finish.surface_finish = v))}
-          {text('Lining', (s) => s.lining_material, (s, v) => void (s.lining_material = v))}
-          {text('Structure / temper', (s) => s.structure_temper, (s, v) => void (s.structure_temper = v))}
-        </Group>
+        {showNotes && (
+          <label className="block text-sm">
+            <Label onRemove={!locked ? () => removeField(NOTES_KEY) : undefined}>Notes</Label>
+            <textarea rows={2} className={inputCls} disabled={locked} value={spec.notes} onChange={(e) => update((s) => void (s.notes = e.target.value))} />
+          </label>
+        )}
 
-        <Group title="Pocket layout">
-          {POCKET_FIELDS.map(([key, label]) => (
-            <Field key={key} label={label}>
-              <input
-                type="number"
-                min={0}
-                className={inputCls}
-                disabled={locked}
-                value={spec.pocket_layout[key]}
-                onChange={(e) => patch((s) => void (s.pocket_layout[key] = num(e.target.value)))}
-              />
-            </Field>
-          ))}
-          {(['id_window', 'coin_zip_pocket'] as const).map((key) => (
-            <label key={key} className="flex items-center gap-2 pt-5 text-sm text-stone-700">
-              <input type="checkbox" disabled={locked} checked={spec.pocket_layout[key]} onChange={(e) => patch((s) => void (s.pocket_layout[key] = e.target.checked))} />
-              {key === 'id_window' ? 'ID / photo window' : 'Coin zip pocket'}
-            </label>
-          ))}
-        </Group>
+        {/* Custom fields */}
+        {spec.custom_fields.length > 0 && (
+          <fieldset>
+            <legend className="mb-2 text-xs font-semibold text-leather-700">Custom fields</legend>
+            <div className="space-y-2">
+              {spec.custom_fields.map((f, i) => (
+                <div key={f.id} className="grid grid-cols-[1fr_1.4fr_7rem_auto] items-center gap-2">
+                  <input aria-label="Custom field name" className={cn(inputCls, 'mt-0')} disabled={locked} value={f.label} placeholder="Field" onChange={(e) => setCustom(i, { label: e.target.value })} />
+                  <input aria-label="Custom field value" className={cn(inputCls, 'mt-0')} disabled={locked} value={f.value} placeholder="Value" onChange={(e) => setCustom(i, { value: e.target.value })} />
+                  <input
+                    aria-label="Surcharge (IDR)"
+                    type="number"
+                    min={0}
+                    step={10000}
+                    className={cn(inputCls, 'mt-0')}
+                    disabled={locked}
+                    value={f.surcharge_idr || ''}
+                    placeholder="+ Rp"
+                    title="Surcharge added to the quotation"
+                    onChange={(e) => setCustom(i, { surcharge_idr: Number(e.target.value) || 0 })}
+                  />
+                  <div className="flex items-center gap-1">
+                    <Badge tone={f.source === 'AI' ? 'blue' : 'leather'}>{f.source}</Badge>
+                    {!locked && (
+                      <button type="button" title="Remove" onClick={() => update((s) => void s.custom_fields.splice(i, 1))} className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </fieldset>
+        )}
 
-        <Group title="Stitching & edge">
-          {text('Stitching method', (s) => s.stitching_method, (s, v) => void (s.stitching_method = v))}
-          {text('Stitch pattern', (s) => s.finish.stitch_pattern, (s, v) => void (s.finish.stitch_pattern = v))}
-          {text('Thread material', (s) => s.finish.thread_material, (s, v) => void (s.finish.thread_material = v))}
-          {text('Thread color', (s) => s.finish.thread_color, (s, v) => void (s.finish.thread_color = v))}
-          <Field label="Edge treatment">
-            <select
-              className={inputCls}
-              disabled={locked}
-              value={spec.finish.edge_treatment}
-              onChange={(e) =>
-                patch((s) => {
-                  const t = e.target.value as EdgeTreatment;
-                  s.finish.edge_treatment = t;
-                  s.edge_finish = t === 'UNSPECIFIED' ? '' : EDGE_LABEL[t];
-                })
+        {/* Add more */}
+        {!locked && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-4">
+            {(hidden.length > 0 || !showNotes) && (
+              <select
+                aria-label="Add a field from this category"
+                value=""
+                onChange={(e) => e.target.value && setPinned((p) => new Set([...p, e.target.value]))}
+                className="rounded-lg bg-white px-2.5 py-1.5 text-xs text-stone-700 ring-1 ring-stone-300"
+              >
+                <option value="">+ Add field ({schema.label.toLowerCase()})…</option>
+                {hidden.map(([key, f]) => (
+                  <option key={key} value={key}>
+                    {GROUP_LABEL[f.group]} · {f.label}
+                  </option>
+                ))}
+                {!showNotes && <option value={NOTES_KEY}>Other · Notes</option>}
+              </select>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                update((s) => void s.custom_fields.push({ id: `cf-${Date.now().toString(36)}`, label: '', value: '', surcharge_idr: 0, source: 'CRAFTER' }))
               }
             >
-              <option value="UNSPECIFIED">— not chosen —</option>
-              {(Object.entries(EDGE_LABEL) as Array<[Exclude<EdgeTreatment, 'UNSPECIFIED'>, string]>).map(([k, label]) => (
-                <option key={k} value={k}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </Group>
-
-        <Group title="Customization & hardware">
-          <Field label="Customization">
-            <select className={inputCls} disabled={locked} value={spec.customization.type} onChange={(e) => patch((s) => void (s.customization.type = e.target.value as CustomizationType))}>
-              {CUSTOMIZATION_OPTIONS.map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {text('Text / artwork', (s) => s.customization.detail, (s, v) => void (s.customization.detail = v))}
-          {text('Placement', (s) => s.customization.placement, (s, v) => void (s.customization.placement = v))}
-          {text('Zipper', (s) => s.finish.zipper, (s, v) => void (s.finish.zipper = v))}
-          {text('Strap', (s) => s.finish.strap, (s, v) => void (s.finish.strap = v))}
-          {text('Hardware / reinforcement', (s) => s.finish.hardware_notes, (s, v) => void (s.finish.hardware_notes = v))}
-        </Group>
+              <Plus className="h-3.5 w-3.5" /> Add Custom Field
+            </Button>
+            <span className="text-[11px] text-stone-400">
+              {Object.keys(schema.fields).length} fields in the {schema.label} schema · {hidden.length} hidden (empty / optional)
+            </span>
+          </div>
+        )}
       </div>
     </Card>
   );

@@ -54,7 +54,7 @@ const valueAt = (order, path) => get(order, ORDER_ROOTS.some((r) => path.startsW
 
 function check(order, path, expected, ctx) {
   if (path === 'height_plus_3') {
-    const now = order.specifications.dimensions_cm.height;
+    const now = order.specifications.attributes.dimensions_cm.height;
     return [now === ctx.heightBefore + 3, `height ${ctx.heightBefore} → ${now} (want +3)`];
   }
   if (path.endsWith('~')) {
@@ -96,7 +96,7 @@ for (const sc of scenarios) {
     await play(followups.shift());
   }
 
-  const ctx = { heightBefore: (await session(phone)).order?.specifications?.dimensions_cm?.height ?? 0 };
+  const ctx = { heightBefore: (await session(phone)).order?.specifications?.attributes?.dimensions_cm?.height ?? 0 };
   for (const turn of sc.post_quote_turns) await play(turn);
 
   const order = (await session(phone)).order;
@@ -107,7 +107,7 @@ for (const sc of scenarios) {
   const ok = results.every(([, pass]) => pass);
   if (!ok) failures++;
   for (const [, pass, detail] of results) console.log(`   ${pass ? '✔' : '✘'} ${detail}`);
-  console.log(`   ${ok ? 'PASS' : 'FAIL'}  ${sc.id}  quote=${order.pattern_and_bom.suggested_quotation_idr || '-'}  sqft=${order.pattern_and_bom.estimated_leather_sqft || '-'}  order=${order.order_id}\n`);
+  console.log(`   ${ok ? 'PASS' : 'FAIL'}  ${sc.id}  quote=${order.pattern_and_bom.suggested_quotation_idr || '-'}  sqft=${order.pattern_and_bom.estimated_material_sqft || '-'}  order=${order.order_id}\n`);
 }
 
 console.log(failures ? `${failures} scenario(s) failed` : 'All scenarios passed');

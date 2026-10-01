@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { ESCALATION_LABEL } from '@/components/ui/status-badges';
 import { postJson, usePoll } from '@/lib/hooks/use-poll';
-import { getConstruction, normalizeSpecifications, requiredTopics, TOPICS, type TopicId } from '@/lib/spec/catalog';
+import { isClassified, isTopicFilled, normalizeSpecifications, schemaOf, topicsFor } from '@/lib/spec/catalog';
 import type { ChatMessage, Conversation, InboundWhatsAppEvent, OrderPayload } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { WaText } from './wa-text';
@@ -18,6 +18,7 @@ interface SessionResponse {
 }
 
 const QUICK_MESSAGES = [
+  'Mas bisa bikin meja makan jati 180x90x75 buat 6 orang?',
   'Halo kak, mau bikin dompet kartu pipih',
   'Muat 4 kartu + selipan uang di tengah, Epsom hitam',
   'Ukuran 10x7 cm, emboss inisial R.W di pojok kanan bawah',
@@ -38,39 +39,29 @@ interface Scenario {
 
 const scenarioTurns = (sc: Scenario) => [...sc.client_turns, ...sc.followup_turns, ...sc.post_quote_turns];
 
-const TOPIC_LABEL: Record<TopicId, string> = {
-  construction: 'Model',
-  dimensions: 'Ukuran',
-  leather: 'Kulit',
-  card_layout: 'Slot kartu',
-  customization: 'Emboss',
-  thread: 'Benang',
-  lining: 'Lining',
-  edge: 'Pinggiran',
-  zipper: 'Sleting',
-  strap: 'Strap',
-  hardware: 'Hardware',
-};
-
-/** Requirement-gathering progress: required topics plus the optional details this form factor asks about. */
+/** Requirement-gathering progress for the active category: its applicable topics, required ones marked *. */
 function SpecChecklist({ order }: { order: OrderPayload }) {
   const spec = normalizeSpecifications(order.specifications);
-  const topics = [...new Set<TopicId>([...requiredTopics(spec), ...getConstruction(spec.construction_type).detail_topics])];
+  const topics = isClassified(spec) || spec.category !== 'CUSTOM_GENERIC' ? topicsFor(spec) : topicsFor(spec).filter((t) => t.id === 'construction');
   const asked = new Set(order.intake?.asked_topics ?? []);
   return (
     <div className="flex flex-wrap items-center gap-1 bg-white/70 px-3 py-1.5 text-[10px] text-stone-600">
       <ListChecks className="h-3 w-3 text-wa-header" />
+      <span className="mr-1 font-semibold text-wa-header">{isClassified(spec) || spec.category !== 'CUSTOM_GENERIC' ? schemaOf(spec.category).label_id : 'Belum terklasifikasi'}</span>
       {topics.map((t) => {
-        const done = TOPICS[t].isFilled(spec);
+        const done = isTopicFilled(spec, t, order.intake);
         return (
           <span
-            key={t}
-            title={TOPICS[t].required ? 'required' : 'optional detail'}
-            className={cn('inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5', done ? 'bg-emerald-100 text-emerald-800' : asked.has(t) ? 'bg-amber-100 text-amber-900' : 'bg-stone-100')}
+            key={t.id}
+            title={t.required ? 'required' : 'optional detail'}
+            className={cn(
+              'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5',
+              done ? 'bg-emerald-100 text-emerald-800' : asked.has(`${spec.category}:${t.id}`) ? 'bg-amber-100 text-amber-900' : 'bg-stone-100',
+            )}
           >
             {done ? <CircleCheck className="h-2.5 w-2.5" /> : <Circle className="h-2.5 w-2.5" />}
-            {TOPIC_LABEL[t]}
-            {TOPICS[t].required && '*'}
+            {t.label}
+            {t.required && '*'}
           </span>
         );
       })}

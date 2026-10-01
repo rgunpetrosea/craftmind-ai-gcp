@@ -3,6 +3,7 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import categoryPresets from '@/lib/data/category-presets.json';
 import inventorySeed from '@/lib/data/inventory.json';
 import { buildDemoSeed } from '@/lib/data/seed';
+import { normalizeOrder } from '@/lib/orders';
 import type { CategoryPreset, ChatMessage, Conversation, CraftCategory, InventoryItem, OrderPayload } from '@/lib/types';
 
 /**
@@ -67,13 +68,13 @@ class MemoryStore implements DataStore {
 
   async getOrder(id: string) {
     const o = this.orders.get(id);
-    return o ? clone(o) : null;
+    return o ? normalizeOrder(clone(o)) : null;
   }
   async listOrders() {
-    return [...this.orders.values()].map(clone).sort(byCreatedDesc);
+    return [...this.orders.values()].map((o) => normalizeOrder(clone(o))).sort(byCreatedDesc);
   }
   async saveOrder(order: OrderPayload) {
-    this.orders.set(order.order_id, clone(order));
+    this.orders.set(order.order_id, normalizeOrder(clone(order)));
   }
   async getConversation(phone: string) {
     const c = this.conversations.get(phone);
@@ -142,14 +143,14 @@ class FirestoreStore implements DataStore {
 
   async getOrder(id: string) {
     const snap = await this.db.collection('orders').doc(id).get();
-    return snap.exists ? (snap.data() as OrderPayload) : null;
+    return snap.exists ? normalizeOrder(snap.data() as OrderPayload) : null;
   }
   async listOrders() {
     const snap = await this.db.collection('orders').orderBy('created_at', 'desc').limit(100).get();
-    return snap.docs.map((d) => d.data() as OrderPayload);
+    return snap.docs.map((d) => normalizeOrder(d.data() as OrderPayload));
   }
   async saveOrder(order: OrderPayload) {
-    await this.db.collection('orders').doc(order.order_id).set(order);
+    await this.db.collection('orders').doc(order.order_id).set(normalizeOrder(order));
   }
   async getConversation(phone: string) {
     const snap = await this.db.collection('conversations').doc(phone).get();

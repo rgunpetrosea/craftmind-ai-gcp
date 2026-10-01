@@ -2,7 +2,7 @@ import type { CategoryPreset, InventoryItem, MaterialSourcing } from '@/lib/type
 
 /**
  * Agent 3 — Stock Matcher & Sourcing.
- * Matches the free-text exterior leather from the intake agent against the
+ * Matches the order's primary material (leather, wood or metal, whichever the category's schema names) against the
  * crafter's stock (EN + ID synonyms), then decides IN_STOCK vs special sourcing.
  */
 
@@ -14,6 +14,11 @@ const TYPE_SYNONYMS: Array<[string, RegExp]> = [
   ['crazy horse', /crazy[\s-]?horse/i],
   ['nappa', /nappa|napa/i],
   ['saffiano', /saffiano/i],
+  ['teak', /jati|teak/i],
+  ['mahogany', /mahoni|mahogany/i],
+  ['walnut', /walnut/i],
+  ['suar', /trembesi|suar|monkey ?pod/i],
+  ['iron', /besi|iron|hollow/i],
 ];
 
 const COLOR_SYNONYMS: Array<[string, RegExp]> = [
@@ -54,19 +59,19 @@ function thicknessOf(text: string): number | undefined {
 }
 
 export function matchInventory(
-  exteriorLeather: string,
+  material: string,
   requiredSqft: number,
   inventory: InventoryItem[],
   preset: CategoryPreset,
 ): InventoryMatch {
-  const wantedType = firstMatch(TYPE_SYNONYMS, exteriorLeather);
+  const wantedType = firstMatch(TYPE_SYNONYMS, material);
   // Strip the leather type first so "Veg-Tan Brown" isn't read as color "tan".
-  const colorText = TYPE_SYNONYMS.reduce((t, [, re]) => t.replace(new RegExp(re.source, 'gi'), ' '), exteriorLeather);
+  const colorText = TYPE_SYNONYMS.reduce((t, [, re]) => t.replace(new RegExp(re.source, 'gi'), ' '), material);
   const wantedColor = firstMatch(COLOR_SYNONYMS, colorText);
-  const wantedThickness = thicknessOf(exteriorLeather);
+  const wantedThickness = thicknessOf(material);
 
   const ranked = inventory
-    .filter((item) => wantedType && item.leather_type === wantedType)
+    .filter((item) => wantedType && item.material_type === wantedType)
     .map((item) => {
       let score = 3;
       if (wantedColor && item.color === wantedColor) score += 2;

@@ -1,509 +1,395 @@
+import { BAG } from '@/lib/spec/categories/bag';
+import { CUSTOM_GENERIC } from '@/lib/spec/categories/custom-generic';
+import { FOOTWEAR } from '@/lib/spec/categories/footwear';
+import { FURNITURE } from '@/lib/spec/categories/furniture';
+import { SMALL_GOODS } from '@/lib/spec/categories/small-goods';
+import type { AnyField, CategorySchemas, ConstructionDef, TopicDef } from '@/lib/spec/fields';
 import type {
+  AttributeValue,
   ConstructionType,
-  EdgeTreatment,
   CraftCategory,
+  CustomField,
   Dimensions,
   IntakeProgress,
-  PocketLayout,
   Specifications,
 } from '@/lib/types';
 
 /**
- * Single source of truth for form factors and the requirement-gathering checklist.
- * Used by the vision prompt, the offline parser, the pattern generator, the conversation
- * planner and the dashboard dropdowns, so a new construction type is added in one place.
+ * Public API over the category registry. Everything category-specific is looked up here; no other module
+ * hard-codes which fields a category has.
  */
 
-export type ConstructionFamily = 'CARD_HOLDER' | 'WALLET' | 'ZIP_WALLET' | 'BAG' | 'SHOE' | 'OTHER';
+export const CATEGORY_SCHEMAS: CategorySchemas = { SMALL_GOODS, BAG, FOOTWEAR, FURNITURE, CUSTOM_GENERIC };
+export const CATEGORIES = Object.keys(CATEGORY_SCHEMAS) as CraftCategory[];
 
-export type TopicId =
-  | 'construction'
-  | 'dimensions'
-  | 'leather'
-  | 'card_layout'
-  | 'customization'
-  | 'thread'
-  | 'lining'
-  | 'edge'
-  | 'zipper'
-  | 'strap'
-  | 'hardware';
-
-export interface ConstructionDef {
-  id: ConstructionType;
+/** Category-agnostic view of a schema for generic code (renderer, schema builder, planner). */
+export interface LooseSchema {
+  id: CraftCategory;
   label: string;
-  category: CraftCategory;
-  family: ConstructionFamily;
-  /** EN + ID keywords for the offline parser. Defs are tested in catalog order. */
+  label_id: string;
+  noun: string;
+  scope: string;
   detect: RegExp;
-  /** What distinguishes this form factor in a photo or sketch (fed to the vision model). */
-  vision_cue: string;
-  default_dimensions: Dimensions;
-  default_pockets: Partial<PocketLayout>;
-  /** Optional topics asked (once each) before the spec card is locked, in order. */
-  detail_topics: TopicId[];
+  material_field: string;
+  material_label: string;
+  constructions: Array<ConstructionDef<CraftCategory> & { id: ConstructionType; defaults: Record<string, AttributeValue> }>;
+  fields: Record<string, AnyField>;
+  topics: Array<Omit<TopicDef<CraftCategory>, 'fields' | 'is_filled' | 'applies_to'> & { fields: string[]; applies_to?: string[]; is_filled?: (s: Specifications) => boolean }>;
 }
 
-export const CONSTRUCTIONS: ConstructionDef[] = [
-  {
-    id: 'ZIP_AROUND_LONG_WALLET',
-    label: 'Zip-around long wallet',
-    category: 'bespoke_wallet',
-    family: 'ZIP_WALLET',
-    detect: /(sleting|zip|resleting)[^.]{0,30}(melingkar|around|keliling)|zip[\s-]?around|dompet panjang.{0,30}(sleting|zip)/i,
-    vision_cue: 'Long rectangular wallet closed by a zipper running around three sides; interior card slots and often a coin zip pocket.',
-    default_dimensions: { length: 20, width: 2.5, height: 10 },
-    default_pockets: { front_slots: 6, back_slots: 6, cash_compartments: 2, coin_zip_pocket: true },
-    detail_topics: ['zipper', 'lining', 'customization', 'thread'],
-  },
-  {
-    id: 'PATTERNED_CARD_HOLDER',
-    label: 'Patterned / engraved card holder',
-    category: 'bespoke_wallet',
-    family: 'CARD_HOLDER',
-    detect: /(kartu|card).{0,40}(motif|batik|ukir|engrav|ornamen|pattern)|(motif|batik|ukir|engrav|ornamen).{0,40}(kartu|card)/i,
-    vision_cue: 'Flat card holder whose outer face carries a carved, stamped or laser-engraved pattern or artwork.',
-    default_dimensions: { length: 10, width: 0.6, height: 7 },
-    default_pockets: { front_slots: 2, back_slots: 2, central_pockets: 1 },
-    detail_topics: ['customization', 'edge', 'thread'],
-  },
-  {
-    id: 'FLAT_CARD_HOLDER',
-    label: 'Flat card holder (single panel, no fold)',
-    category: 'bespoke_wallet',
-    family: 'CARD_HOLDER',
-    detect: /dompet kartu|card ?holder|card ?sleeve|card ?case|kartu pipih|pipih|slim wallet/i,
-    vision_cue:
-      'A SINGLE FLAT panel/sleeve with card slots visible on the front (and/or back) face. There is NO center fold line and it does not open like a book. Cards are slid in from the top edge. Often a central pocket for folded cash.',
-    default_dimensions: { length: 10, width: 0.6, height: 7 },
-    default_pockets: { front_slots: 2, back_slots: 2, central_pockets: 1 },
-    detail_topics: ['customization', 'edge', 'thread'],
-  },
-  {
-    id: 'TRIFOLD_WALLET',
-    label: 'Trifold wallet',
-    category: 'bespoke_wallet',
-    family: 'WALLET',
-    detect: /tri[\s-]?fold|lipat tiga/i,
-    vision_cue: 'Wallet that folds twice into three panels; visibly thicker than a bifold, with two fold lines.',
-    default_dimensions: { length: 10, width: 2.5, height: 9 },
-    default_pockets: { front_slots: 3, back_slots: 3, cash_compartments: 1, id_window: true },
-    detail_topics: ['customization', 'lining', 'edge', 'thread'],
-  },
-  {
-    id: 'ACCORDION_WALLET',
-    label: 'Accordion wallet',
-    category: 'bespoke_wallet',
-    family: 'WALLET',
-    detect: /accordion|akordeon|harmonika|z[\s-]?fold/i,
-    vision_cue: 'Wallet with a Z-folded pleated gusset that expands like an accordion, with stacked card pockets.',
-    default_dimensions: { length: 11, width: 3, height: 8 },
-    default_pockets: { front_slots: 4, back_slots: 4, cash_compartments: 1 },
-    detail_topics: ['customization', 'lining', 'edge', 'thread'],
-  },
-  {
-    id: 'BIFOLD_WALLET',
-    label: 'Bifold wallet',
-    category: 'bespoke_wallet',
-    family: 'WALLET',
-    detect: /bi[\s-]?fold|lipat dua|dompet lipat/i,
-    vision_cue:
-      'Wallet that folds ONCE along a center spine like a book; two halves each holding card slots, with a full-length cash compartment between them.',
-    default_dimensions: { length: 11, width: 2, height: 9 },
-    default_pockets: { front_slots: 3, back_slots: 3, cash_compartments: 2 },
-    detail_topics: ['customization', 'lining', 'edge', 'thread'],
-  },
-  {
-    id: 'PADEL_RACKET_BAG',
-    label: 'Padel racket bag',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /padel|raket|racket|racquet/i,
-    vision_cue: 'Tall narrow sleeve-style bag sized for a padel/tennis racket, usually with a zipper along one side and a carry strap.',
-    default_dimensions: { length: 30, width: 10, height: 60 },
-    default_pockets: { exterior_pockets: 1 },
-    detail_topics: ['strap', 'lining', 'hardware', 'thread'],
-  },
-  {
-    id: 'EXECUTIVE_BRIEFCASE',
-    label: 'Executive briefcase',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /briefcase|tas kerja|tas kantor|attache|executive/i,
-    vision_cue: 'Rigid rectangular business case with top handle(s), a flap or zipper top, and often reinforced corners.',
-    default_dimensions: { length: 42, width: 10, height: 31 },
-    default_pockets: { interior_zip_pockets: 1, exterior_pockets: 1 },
-    detail_topics: ['hardware', 'lining', 'strap', 'customization'],
-  },
-  {
-    id: 'HYBRID_BACKPACK_TOTE',
-    label: 'Hybrid backpack-tote',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /hybrid|campuran|backpack.{0,25}tote|tote.{0,25}backpack|ransel.{0,25}tote|tote.{0,25}ransel/i,
-    vision_cue: 'Tote body with convertible backpack straps.',
-    default_dimensions: { length: 32, width: 14, height: 40 },
-    default_pockets: { interior_zip_pockets: 1 },
-    detail_topics: ['strap', 'lining', 'customization', 'thread'],
-  },
-  {
-    id: 'BACKPACK',
-    label: 'Backpack',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /backpack|ransel/i,
-    vision_cue: 'Bag worn on the back with two shoulder straps and a top handle.',
-    default_dimensions: { length: 30, width: 13, height: 40 },
-    default_pockets: { interior_zip_pockets: 1, exterior_pockets: 1 },
-    detail_topics: ['strap', 'lining', 'customization', 'thread'],
-  },
-  {
-    id: 'CROSSBODY_CAMERA_BAG',
-    label: 'Crossbody camera bag',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /kamera|camera|mirrorless|dslr/i,
-    vision_cue: 'Small boxy crossbody bag with a padded interior sized for a camera body.',
-    default_dimensions: { length: 18, width: 8, height: 14 },
-    default_pockets: { exterior_pockets: 0 },
-    detail_topics: ['strap', 'lining', 'customization', 'thread'],
-  },
-  {
-    id: 'MESSENGER_BAG',
-    label: 'Messenger / laptop bag',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /messenger|tas laptop|laptop bag|satchel/i,
-    vision_cue: 'Wide, shallow bag with a long front flap, a crossbody strap and a padded laptop compartment.',
-    default_dimensions: { length: 38, width: 10, height: 28 },
-    default_pockets: { interior_zip_pockets: 1, exterior_pockets: 1 },
-    detail_topics: ['strap', 'lining', 'customization', 'thread'],
-  },
-  {
-    id: 'SLOUCHY_TOTE',
-    label: 'Slouchy shoulder tote',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /slouchy|lemas.{0,25}tote|tote.{0,25}lemas|soft tote|hobo/i,
-    vision_cue: 'Soft, unstructured open-top tote that folds and slumps; two shoulder handles.',
-    default_dimensions: { length: 38, width: 14, height: 32 },
-    default_pockets: { interior_zip_pockets: 1 },
-    detail_topics: ['lining', 'customization', 'thread'],
-  },
-  {
-    id: 'STRUCTURED_TOTE',
-    label: 'Structured tote',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /tote/i,
-    vision_cue: 'Rigid open-top tote that holds its shape, two top handles.',
-    default_dimensions: { length: 35, width: 14, height: 28 },
-    default_pockets: { interior_zip_pockets: 1 },
-    detail_topics: ['lining', 'customization', 'thread'],
-  },
-  {
-    id: 'SLING_BAG',
-    label: 'Sling / shoulder bag',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /sling|selempang|crossbody|shoulder bag/i,
-    vision_cue: 'Medium bag with a single adjustable shoulder strap, usually with a front flap.',
-    default_dimensions: { length: 30, width: 10, height: 22 },
-    default_pockets: { exterior_pockets: 0 },
-    detail_topics: ['strap', 'lining', 'customization', 'thread'],
-  },
-  {
-    id: 'CLUTCH',
-    label: 'Clutch',
-    category: 'bespoke_bag',
-    family: 'BAG',
-    detect: /clutch|pouch/i,
-    vision_cue: 'Small handheld flat bag with no straps.',
-    default_dimensions: { length: 25, width: 4, height: 16 },
-    default_pockets: {},
-    detail_topics: ['lining', 'customization'],
-  },
-  {
-    id: 'DERBY_SHOES',
-    label: 'Derby shoes',
-    category: 'bespoke_shoes',
-    family: 'SHOE',
-    detect: /derby/i,
-    vision_cue: 'Lace-up shoe with open lacing (quarters sewn on top of the vamp).',
-    default_dimensions: { length: 28, width: 10, height: 12 },
-    default_pockets: {},
-    detail_topics: ['lining', 'customization'],
-  },
-  {
-    id: 'OXFORD_SHOES',
-    label: 'Oxford shoes',
-    category: 'bespoke_shoes',
-    family: 'SHOE',
-    detect: /oxford/i,
-    vision_cue: 'Lace-up shoe with closed lacing (quarters sewn under the vamp).',
-    default_dimensions: { length: 28, width: 10, height: 12 },
-    default_pockets: {},
-    detail_topics: ['lining', 'customization'],
-  },
-  {
-    id: 'LOAFERS',
-    label: 'Loafers',
-    category: 'bespoke_shoes',
-    family: 'SHOE',
-    detect: /loafer/i,
-    vision_cue: 'Slip-on shoe with no laces.',
-    default_dimensions: { length: 28, width: 10, height: 11 },
-    default_pockets: {},
-    detail_topics: ['lining', 'customization'],
-  },
-  {
-    id: 'CHELSEA_BOOTS',
-    label: 'Chelsea boots',
-    category: 'bespoke_shoes',
-    family: 'SHOE',
-    detect: /chelsea|boots?\b|sepatu boot/i,
-    vision_cue: 'Ankle boot with elastic side gussets and a pull tab.',
-    default_dimensions: { length: 28, width: 10, height: 20 },
-    default_pockets: {},
-    detail_topics: ['lining', 'customization'],
-  },
-  {
-    id: 'OTHER_CUSTOM',
-    label: 'Other / custom (crafter to interpret)',
-    category: 'bespoke_bag',
-    family: 'OTHER',
-    detect: /(?!)/, // never auto-detected
-    vision_cue: 'Anything that fits none of the above.',
-    default_dimensions: { length: 30, width: 12, height: 22 },
-    default_pockets: {},
-    detail_topics: ['lining', 'customization'],
-  },
-];
-
-const BY_ID = new Map<ConstructionType, ConstructionDef>(CONSTRUCTIONS.map((c) => [c.id, c]));
-
-const FALLBACK_DEF: ConstructionDef = {
-  ...CONSTRUCTIONS[CONSTRUCTIONS.length - 1],
-  id: 'UNSPECIFIED',
-  label: 'Not yet identified',
-  detail_topics: [],
-};
-
-export function getConstruction(id: ConstructionType): ConstructionDef {
-  return BY_ID.get(id) ?? FALLBACK_DEF;
+export function schemaOf(category: CraftCategory): LooseSchema {
+  return CATEGORY_SCHEMAS[category] as unknown as LooseSchema;
 }
 
-/** Construction types offered for a given craft category (dashboard dropdown). */
-export function constructionsFor(category: CraftCategory): ConstructionDef[] {
-  return CONSTRUCTIONS.filter((c) => c.category === category);
+export const attrs = (spec: Specifications) => spec.attributes as unknown as Record<string, AttributeValue>;
+
+// ---------------------------------------------------------------------------
+// Form factors
+// ---------------------------------------------------------------------------
+
+export const ALL_CONSTRUCTIONS = CATEGORIES.flatMap((c) => schemaOf(c).constructions.map((d) => ({ ...d, category: c })));
+
+export function constructionDef(id: ConstructionType) {
+  return ALL_CONSTRUCTIONS.find((d) => d.id === id);
 }
 
-export const CONSTRUCTION_IDS = CONSTRUCTIONS.map((c) => c.id) as ConstructionType[];
-
-/** First matching construction type in free text, or undefined. */
-export function detectConstruction(text: string): ConstructionDef | undefined {
-  return CONSTRUCTIONS.find((c) => c.detect.test(text));
+export function categoryOfConstruction(id: ConstructionType): CraftCategory | undefined {
+  return constructionDef(id)?.category;
 }
 
-/** The vision-model briefing that separates look-alike form factors. */
-export function visionGuide(): string {
-  return CONSTRUCTIONS.filter((c) => c.id !== 'OTHER_CUSTOM')
-    .map((c) => `- ${c.id}: ${c.vision_cue}`)
+export function constructionLabel(id: ConstructionType): string {
+  return constructionDef(id)?.label ?? 'Not yet identified';
+}
+
+/** Most specific form factor mentioned in the text (across all categories), else the category whose keywords match. */
+export function detectProduct(text: string): { category?: CraftCategory; construction?: ConstructionType } {
+  const hit = ALL_CONSTRUCTIONS.find((d) => d.detect.test(text));
+  if (hit) return { category: hit.category, construction: hit.id };
+  const category = CATEGORIES.find((c) => schemaOf(c).detect.test(text));
+  return { category };
+}
+
+/** Vision briefing that separates look-alike form factors, grouped by category. */
+export function visionGuide(categories: CraftCategory[] = CATEGORIES): string {
+  return categories
+    .map((c) => {
+      const s = schemaOf(c);
+      const lines = s.constructions.filter((d) => !d.id.startsWith('OTHER_')).map((d) => `  - ${d.id}: ${d.vision_cue}`);
+      return `${c} (${s.scope})\n${lines.join('\n')}`;
+    })
     .join('\n');
 }
 
-export const EDGE_LABEL: Record<Exclude<EdgeTreatment, 'UNSPECIFIED'>, string> = {
-  BURNISHED: 'Burnished edge',
-  EDGE_PAINT: 'Painted edge',
-  RAW: 'Raw / clean-cut edge',
-  TURNED_EDGE: 'Turned edge',
-};
-
 // ---------------------------------------------------------------------------
-// Blank / normalised specification
+// Values
 // ---------------------------------------------------------------------------
 
-export function emptyPockets(): PocketLayout {
-  return {
-    front_slots: 0,
-    back_slots: 0,
-    central_pockets: 0,
-    cash_compartments: 0,
-    id_window: false,
-    coin_zip_pocket: false,
-    interior_zip_pockets: 0,
-    exterior_pockets: 0,
-  };
+export function blankValue(field: AnyField): AttributeValue {
+  switch (field.type) {
+    case 'text':
+      return '';
+    case 'number':
+      return 0;
+    case 'boolean':
+      return false;
+    case 'enum':
+      return 'UNSPECIFIED';
+    case 'dimensions':
+      return { length: 0, width: 0, height: 0 };
+  }
 }
 
-export function emptySpecifications(): Specifications {
+export function isValueSet(field: AnyField, value: unknown): boolean {
+  switch (field.type) {
+    case 'text':
+      return typeof value === 'string' && value.trim() !== '';
+    case 'number':
+      return typeof value === 'number' && value > 0;
+    case 'boolean':
+      return value === true;
+    case 'enum':
+      return typeof value === 'string' && value !== 'UNSPECIFIED' && value !== '';
+    case 'dimensions': {
+      const d = value as Partial<Dimensions> | undefined;
+      if (!d) return false;
+      const axes = field.required_axes.length ? field.required_axes : (['length', 'width', 'height'] as const);
+      return field.required_axes.length ? axes.every((a) => (d[a] ?? 0) > 0) : axes.some((a) => (d[a] ?? 0) > 0);
+    }
+  }
+}
+
+/** Coerce an incoming value (from Gemini, the form or the parser) to the field's type; undefined when invalid. */
+export function coerceValue(field: AnyField, value: unknown): AttributeValue | undefined {
+  switch (field.type) {
+    case 'text':
+      return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : undefined;
+    case 'number': {
+      const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(',', '.')) : NaN;
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
+    }
+    case 'boolean':
+      return typeof value === 'boolean' ? value : value === 'true' ? true : value === 'false' ? false : undefined;
+    case 'enum':
+      return typeof value === 'string' && (value === 'UNSPECIFIED' || value in field.options) ? value : undefined;
+    case 'dimensions': {
+      if (!value || typeof value !== 'object') return undefined;
+      const d = value as Partial<Record<keyof Dimensions, unknown>>;
+      const n = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : 0);
+      return { length: n(d.length), width: n(d.width), height: n(d.height) };
+    }
+  }
+}
+
+export function blankAttributes(category: CraftCategory): Record<string, AttributeValue> {
+  return Object.fromEntries(Object.entries(schemaOf(category).fields).map(([k, f]) => [k, blankValue(f)]));
+}
+
+export function emptySpecifications(category: CraftCategory = 'CUSTOM_GENERIC'): Specifications {
   return {
-    silhouette: '',
-    target_capacity: '',
-    dimensions_cm: { length: 0, width: 0, height: 0 },
-    exterior_leather: '',
-    lining_material: '',
-    structure_temper: '',
-    stitching_method: '',
-    edge_finish: '',
+    category,
     construction_type: 'UNSPECIFIED',
-    pocket_layout: emptyPockets(),
-    finish: {
-      edge_treatment: 'UNSPECIFIED',
-      surface_finish: '',
-      color_finish: '',
-      thread_color: '',
-      thread_material: '',
-      stitch_pattern: '',
-      zipper: '',
-      strap: '',
-      hardware_notes: '',
-    },
-    customization: { type: 'UNSPECIFIED', detail: '', placement: '' },
-  };
+    model_name: '',
+    notes: '',
+    attributes: blankAttributes(category),
+    custom_fields: [],
+  } as unknown as Specifications;
 }
 
-/** Fill any missing (older / partial) fields so downstream code can rely on the full shape. */
-export function normalizeSpecifications(spec: Partial<Specifications> | undefined): Specifications {
-  const base = emptySpecifications();
-  if (!spec) return base;
+export function isFieldSet(spec: Specifications, key: string): boolean {
+  const field = schemaOf(spec.category).fields[key];
+  return !!field && isValueSet(field, attrs(spec)[key]);
+}
+
+export function isFieldRelevant(spec: Specifications, key: string): boolean {
+  const field = schemaOf(spec.category).fields[key];
+  return !!field && (field.relevant ? field.relevant(attrs(spec), spec.construction_type) : true);
+}
+
+// ---------------------------------------------------------------------------
+// Normalization, legacy migration, category switching
+// ---------------------------------------------------------------------------
+
+const LEGACY_CATEGORY: Record<string, CraftCategory> = { bespoke_wallet: 'SMALL_GOODS', bespoke_bag: 'BAG', bespoke_shoes: 'FOOTWEAR' };
+
+/** Orders written before category isolation (flat spec with pocket_layout / finish / customization). */
+function migrateLegacy(raw: Record<string, unknown>, legacyCategory?: string): Specifications {
+  const construction = (raw.construction_type as ConstructionType) ?? 'UNSPECIFIED';
+  const category = categoryOfConstruction(construction) ?? LEGACY_CATEGORY[legacyCategory ?? ''] ?? 'CUSTOM_GENERIC';
+  const pockets = (raw.pocket_layout ?? {}) as Record<string, unknown>;
+  const finish = (raw.finish ?? {}) as Record<string, unknown>;
+  const custom = (raw.customization ?? {}) as Record<string, unknown>;
+  const flat: Record<string, unknown> = {
+    ...pockets,
+    dimensions_cm: raw.dimensions_cm,
+    exterior_leather: raw.exterior_leather,
+    upper_material: raw.exterior_leather,
+    primary_material: raw.exterior_leather,
+    color: finish.color_finish,
+    lining: raw.lining_material,
+    stitching_method: raw.stitching_method,
+    edge_finish: finish.edge_treatment,
+    thread_color: finish.thread_color,
+    thread_material: finish.thread_material,
+    stitch_pattern: finish.stitch_pattern,
+    zipper: finish.zipper,
+    hardware: finish.hardware_notes,
+    target_capacity: raw.target_capacity,
+    embossing_type: custom.type,
+    embossing_text: custom.detail,
+    embossing_placement: custom.placement,
+  };
+  return normalizeSpecifications({
+    category,
+    construction_type: categoryOfConstruction(construction) === category ? construction : 'UNSPECIFIED',
+    model_name: raw.silhouette ?? '',
+    notes: '',
+    attributes: flat,
+    custom_fields: [],
+  });
+}
+
+/**
+ * Bring any stored / incoming spec to the exact shape of its category: unknown attribute keys are dropped (no mixing
+ * across categories), missing ones get blank values, values are coerced to the field type, and the construction type
+ * must belong to the category.
+ */
+export function normalizeSpecifications(raw: unknown, legacyCategory?: string): Specifications {
+  if (!raw || typeof raw !== 'object') return emptySpecifications();
+  const r = raw as Record<string, unknown>;
+  if (!('attributes' in r) || !('category' in r)) return migrateLegacy(r, legacyCategory);
+
+  const category = (CATEGORIES as string[]).includes(r.category as string) ? (r.category as CraftCategory) : 'CUSTOM_GENERIC';
+  const schema = schemaOf(category);
+  const incoming = (r.attributes ?? {}) as Record<string, unknown>;
+  const attributes: Record<string, AttributeValue> = {};
+  for (const [key, field] of Object.entries(schema.fields)) {
+    attributes[key] = coerceValue(field, incoming[key]) ?? blankValue(field);
+  }
+  const construction = r.construction_type as ConstructionType;
   return {
-    ...base,
-    ...spec,
-    dimensions_cm: { ...base.dimensions_cm, ...spec.dimensions_cm },
-    pocket_layout: { ...base.pocket_layout, ...spec.pocket_layout },
-    finish: { ...base.finish, ...spec.finish },
-    customization: { ...base.customization, ...spec.customization },
-  };
+    category,
+    construction_type: categoryOfConstruction(construction) === category ? construction : 'UNSPECIFIED',
+    model_name: typeof r.model_name === 'string' ? r.model_name : '',
+    notes: typeof r.notes === 'string' ? r.notes : '',
+    attributes,
+    custom_fields: Array.isArray(r.custom_fields) ? (r.custom_fields as CustomField[]).filter((f) => f && f.label?.trim()) : [],
+  } as unknown as Specifications;
 }
 
-/** Total pockets / slots the client asked for. */
-export function totalSlots(p: PocketLayout): number {
-  return p.front_slots + p.back_slots + p.central_pockets + p.cash_compartments;
+/** Switch category: start from a blank schema, carry over only same-named fields of the same type (e.g. dimensions). */
+export function changeCategory(spec: Specifications, category: CraftCategory, construction: ConstructionType = 'UNSPECIFIED'): Specifications {
+  if (spec.category === category) return normalizeSpecifications({ ...spec, construction_type: construction === 'UNSPECIFIED' ? spec.construction_type : construction });
+  const from = schemaOf(spec.category).fields;
+  const to = schemaOf(category).fields;
+  const carried: Record<string, AttributeValue> = {};
+  for (const [key, field] of Object.entries(to)) {
+    if (from[key]?.type === field.type && isValueSet(field, attrs(spec)[key])) carried[key] = attrs(spec)[key];
+  }
+  return normalizeSpecifications({ ...spec, category, construction_type: construction, attributes: carried });
+}
+
+/** Upsert AI-extracted custom fields by label; crafter-entered fields are never overwritten. */
+export function mergeCustomFields(existing: CustomField[], incoming: Array<{ label: string; value: string }>): CustomField[] {
+  const out = [...existing];
+  for (const { label, value } of incoming) {
+    if (!label?.trim() || !value?.trim()) continue;
+    const i = out.findIndex((f) => f.label.trim().toLowerCase() === label.trim().toLowerCase());
+    if (i === -1) out.push({ id: `cf-${Date.now().toString(36)}-${out.length}`, label: label.trim(), value: value.trim(), surcharge_idr: 0, source: 'AI' });
+    else if (out[i].source === 'AI') out[i] = { ...out[i], value: value.trim() };
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Requirement-gathering checklist
+// Requirement-gathering checklist (per category)
 // ---------------------------------------------------------------------------
 
-interface TopicDef {
-  required: boolean;
-  isFilled: (s: Specifications) => boolean;
-  /** Indonesian question fragment: used verbatim by the offline replier and as guidance for Gemini. */
-  ask: string;
+export type LooseTopic = LooseSchema['topics'][number];
+
+export function topicsFor(spec: Specifications): LooseTopic[] {
+  return schemaOf(spec.category).topics.filter((t) => !t.applies_to || t.applies_to.includes(spec.construction_type));
 }
 
-export const TOPICS: Record<TopicId, TopicDef> = {
-  construction: {
-    required: true,
-    isFilled: (s) => s.construction_type !== 'UNSPECIFIED',
-    ask: 'model/bentuk yang diinginkan (mis. dompet kartu pipih satu panel, bifold, sling bag, tote, derby)',
-  },
-  dimensions: {
-    required: true,
-    isFilled: (s) => s.dimensions_cm.length > 0 && s.dimensions_cm.height > 0,
-    ask: 'ukuran perkiraan (P x L x T dalam cm), atau mau muat barang apa (mis. laptop 14 inch)',
-  },
-  leather: {
-    required: true,
-    isFilled: (s) => s.exterior_leather.trim() !== '',
-    ask: 'jenis & warna kulit (mis. Veg-Tan coklat 1.6mm, Epsom hitam, Pull-Up)',
-  },
-  card_layout: {
-    required: true,
-    isFilled: (s) => totalSlots(s.pocket_layout) > 0,
-    ask: 'jumlah slot kartu dan tempat uang/selipan (mis. 4 kartu + 1 kantong tengah untuk uang)',
-  },
-  customization: {
-    required: false,
-    isFilled: (s) => s.customization.type !== 'UNSPECIFIED',
-    ask: 'apakah mau emboss inisial/logo atau ukiran laser (kalau iya, tulisan/motif dan posisinya)',
-  },
-  thread: {
-    required: false,
-    isFilled: (s) => s.finish.thread_color.trim() !== '' || s.finish.thread_material.trim() !== '',
-    ask: 'warna & jenis benang jahitan (mis. benang linen hitam, saddle stitch)',
-  },
-  lining: {
-    required: false,
-    isFilled: (s) => s.lining_material.trim() !== '',
-    ask: 'bahan lining bagian dalam (mis. suede, kulit, kanvas) atau tanpa lining',
-  },
-  edge: {
-    required: false,
-    isFilled: (s) => s.finish.edge_treatment !== 'UNSPECIFIED' || s.edge_finish.trim() !== '',
-    ask: 'finishing pinggiran kulit: burnished (polos, vintage), edge paint (dicat), atau raw',
-  },
-  zipper: {
-    required: false,
-    isFilled: (s) => s.finish.zipper.trim() !== '',
-    ask: 'tipe & warna sleting (mis. YKK Excella gold atau silver)',
-  },
-  strap: {
-    required: false,
-    isFilled: (s) => s.finish.strap.trim() !== '',
-    ask: 'tali/strap: full kulit atau kombinasi webbing, lepas-pasang atau permanen',
-  },
-  hardware: {
-    required: false,
-    isFilled: (s) => s.finish.hardware_notes.trim() !== '',
-    ask: 'hardware yang diinginkan (mis. solid brass, nikel, gold) dan apakah perlu penguat/reinforcement',
-  },
-};
+export function isTopicFilled(spec: Specifications, topic: LooseTopic, progress?: Pick<IntakeProgress, 'deferred_topics'>): boolean {
+  if (topic.deferrable && progress?.deferred_topics?.includes(`${spec.category}:${topic.id}`)) return true;
+  if (topic.is_filled) return topic.is_filled(spec);
+  return topic.fields.some((f) => isFieldSet(spec, f));
+}
 
-/** How many checklist topics are filled; the orchestrator compares this across turns to detect a stalled conversation. */
-export function filledTopicCount(spec: Specifications): number {
-  return (Object.keys(TOPICS) as TopicId[]).filter((t) => TOPICS[t].isFilled(spec)).length;
+export const isClassified = (spec: Specifications) => spec.construction_type !== 'UNSPECIFIED';
+
+/**
+ * Required topics still open. While the product is completely unknown (still the CUSTOM_GENERIC placeholder with no
+ * form factor) only "what product?" is asked; once a real category is detected its own required topics apply.
+ */
+export function missingRequired(spec: Specifications, progress?: Pick<IntakeProgress, 'deferred_topics'>): LooseTopic[] {
+  const required = topicsFor(spec).filter((t) => t.required && !isTopicFilled(spec, t, progress));
+  if (!isClassified(spec) && spec.category === 'CUSTOM_GENERIC') return required.filter((t) => t.id === 'construction');
+  return required;
+}
+
+export function filledTopicCount(spec: Specifications, progress?: Pick<IntakeProgress, 'deferred_topics'>): number {
+  return (isClassified(spec) ? 1 : 0) + topicsFor(spec).filter((t) => t.id !== 'construction' && isTopicFilled(spec, t, progress)).length;
 }
 
 export const MAX_QUESTIONS_PER_TURN = 2;
 
-export function requiredTopics(spec: Specifications): TopicId[] {
-  const family = getConstruction(spec.construction_type).family;
-  const needsSlots = family === 'CARD_HOLDER' || family === 'WALLET' || family === 'ZIP_WALLET';
-  return ['construction', 'dimensions', 'leather', ...(needsSlots ? (['card_layout'] as TopicId[]) : [])];
-}
-
 export interface ConversationPlan {
-  /** Required topics still empty. */
-  missing_required: TopicId[];
-  /** Optional topics not yet filled and never asked. */
-  pending_details: TopicId[];
-  /** Topics to ask in the next bubble (≤ MAX_QUESTIONS_PER_TURN), required first. */
-  ask: TopicId[];
-  /** True when the spec card can be locked and the draft quotation built. */
+  missing_required: LooseTopic[];
+  pending_details: LooseTopic[];
+  /** Topics for the next bubble (≤ MAX_QUESTIONS_PER_TURN), required first. */
+  ask: LooseTopic[];
   ready: boolean;
 }
 
 /**
- * Decide what the AI says next. Required topics come first; remaining slots in the bubble go to
- * optional detail topics (embossing, thread, lining, ...), each asked at most once. The spec is
- * ready when every required topic is filled and either no detail topics are left or the client
- * said they have nothing more to add.
+ * Required topics of the active category first, then its optional detail topics (each asked once). Ready when every
+ * required topic is filled and either no detail is left or the client said they are done.
  */
 export function planConversation(spec: Specifications, progress: IntakeProgress | undefined, clientFinished: boolean): ConversationPlan {
   const asked = new Set(progress?.asked_topics ?? []);
-  const missing_required = requiredTopics(spec).filter((t) => !TOPICS[t].isFilled(spec));
-  const pending_details = getConstruction(spec.construction_type).detail_topics.filter(
-    (t) => !TOPICS[t].isFilled(spec) && !asked.has(t),
-  );
-
-  const ask: TopicId[] = missing_required.slice(0, MAX_QUESTIONS_PER_TURN);
-  if (!clientFinished) {
-    for (const t of pending_details) {
-      if (ask.length >= MAX_QUESTIONS_PER_TURN) break;
-      ask.push(t);
-    }
-  }
+  const missing_required = missingRequired(spec, progress);
+  const pending_details = isClassified(spec)
+    ? topicsFor(spec).filter((t) => !t.required && !isTopicFilled(spec, t, progress) && !asked.has(`${spec.category}:${t.id}`))
+    : [];
+  const ask = missing_required.slice(0, MAX_QUESTIONS_PER_TURN);
+  if (!clientFinished) for (const t of pending_details) if (ask.length < MAX_QUESTIONS_PER_TURN) ask.push(t);
   const ready = missing_required.length === 0 && (clientFinished || pending_details.length === 0);
   return { missing_required, pending_details, ask: ready ? [] : ask, ready };
 }
 
-/** Offline reply: acknowledge, then ask the planned topics. */
-export function templateQuestion(clientName: string, topics: TopicId[], isFirstTurn: boolean): string {
-  const bullets = topics.map((t, i) => `${topics.length > 1 ? `${i + 1}. ` : ''}${TOPICS[t].ask}`).join('\n');
+/** Topic keys are namespaced by category so switching category re-asks that category's own details. */
+export const topicKey = (spec: Specifications, topic: LooseTopic) => `${spec.category}:${topic.id}`;
+
+export function templateQuestion(clientName: string, topics: LooseTopic[], isFirstTurn: boolean): string {
+  const bullets = topics.map((t, i) => `${topics.length > 1 ? `${i + 1}. ` : ''}${t.ask}`).join('\n');
   const opener = isFirstTurn
     ? `Halo kak ${clientName}! 🙏 Terima kasih sudah menghubungi kami. Supaya desainnya pas, boleh dibantu info:`
     : `Siap kak ${clientName}, sudah kami catat ya 👍 Selanjutnya, boleh info:`;
   return `${opener}\n${bullets}`;
+}
+
+// ---------------------------------------------------------------------------
+// Display
+// ---------------------------------------------------------------------------
+
+export function formatValue(field: AnyField, value: AttributeValue): string {
+  switch (field.type) {
+    case 'dimensions': {
+      const d = value as Dimensions;
+      return `${[d.length, d.width, d.height].filter((n) => n > 0).join(' x ')} cm`;
+    }
+    case 'enum':
+      return (field.options as Record<string, string>)[value as string] ?? String(value);
+    case 'boolean':
+      return value ? 'Ya' : 'Tidak';
+    case 'number':
+      return `${value}${field.unit ? ` ${field.unit}` : ''}`;
+    default:
+      return String(value);
+  }
+}
+
+/** Set + relevant fields of a spec in registry order: the basis of the spec card, mockup prompt and quotation. */
+export function describeFields(spec: Specifications): Array<{ key: string; field: AnyField; value: AttributeValue; text: string }> {
+  const schema = schemaOf(spec.category);
+  return Object.entries(schema.fields)
+    .filter(([key, field]) => isValueSet(field, attrs(spec)[key]) && isFieldRelevant(spec, key))
+    .map(([key, field]) => ({ key, field, value: attrs(spec)[key], text: formatValue(field, attrs(spec)[key]) }));
+}
+
+// ---------------------------------------------------------------------------
+// Locking the spec card
+// ---------------------------------------------------------------------------
+
+/**
+ * Called when the spec card is locked. Topics the client left open (or deferred) get the form factor's typical values,
+ * then any field still unset gets the category preset's workshop default. Only keys of the spec's own category are touched.
+ */
+export function finalizeSpecifications(spec: Specifications, presetDefaults: Partial<Record<string, string | number | boolean>>): Specifications {
+  const out = normalizeSpecifications(structuredClone(spec));
+  const a = attrs(out);
+  const schema = schemaOf(out.category);
+  const construction = constructionDef(out.construction_type);
+  const cDefaults = (construction?.defaults ?? {}) as Record<string, AttributeValue>;
+
+  for (const topic of topicsFor(out)) {
+    if (topic.fields.some((k) => isFieldSet(out, k))) continue;
+    for (const k of topic.fields) if (cDefaults[k] !== undefined) a[k] = structuredClone(cDefaults[k]);
+  }
+
+  if (out.category === 'BAG' && !isFieldSet(out, 'dimensions_cm') && (a.laptop_size_inch as number) > 0) {
+    const inch = a.laptop_size_inch as number;
+    const diag = inch * 2.54;
+    a.dimensions_cm = { length: Math.round(0.915 * diag + 4), width: 10, height: Math.round(0.63 * diag + 4) };
+  }
+
+  for (const [key, field] of Object.entries(schema.fields)) {
+    if (isValueSet(field, a[key])) continue;
+    const fromConstruction = field.type === 'dimensions' ? cDefaults[key] : undefined;
+    const value = coerceValue(field, presetDefaults[key] ?? fromConstruction);
+    if (value !== undefined && isValueSet(field, value)) a[key] = value;
+  }
+  if (!out.model_name.trim() && construction) out.model_name = construction.label;
+  return out;
 }

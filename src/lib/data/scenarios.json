@@ -16,9 +16,10 @@
     "post_quote_turns": [],
     "expected_summary": "Form Factor: FLAT_CARD_HOLDER | Slot: 4 Front/Back + 1 Central Pocket | Material: Epsom Black | Emboss: Custom Initial 'R.W'",
     "checks": {
-      "customization.type": "EMBOSS_INITIALS",
-      "exterior_leather~": "epsom",
-      "construction_type": "FLAT_CARD_HOLDER"
+      "attributes.embossing_type": "EMBOSS_INITIALS",
+      "attributes.exterior_leather~": "epsom",
+      "construction_type": "FLAT_CARD_HOLDER",
+      "category": "SMALL_GOODS"
     }
   },
   {
@@ -38,7 +39,8 @@
     "post_quote_turns": [],
     "expected_summary": "Form Factor: MESSENGER_BAG | Laptop Size: 14 inch | Material: Veg-Tan Brown 1.6mm | Labor Hours: 12h",
     "checks": {
-      "construction_type": "MESSENGER_BAG"
+      "construction_type": "MESSENGER_BAG",
+      "category": "BAG"
     }
   },
   {
@@ -58,9 +60,10 @@
     "post_quote_turns": [],
     "expected_summary": "Form Factor: BIFOLD_WALLET | Slot: 6 Card + 1 ID Window + 2 Cash Compartments | Finish: Burnished Edge",
     "checks": {
-      "pocket_layout.id_window": true,
-      "finish.edge_treatment": "BURNISHED",
-      "construction_type": "BIFOLD_WALLET"
+      "attributes.id_window": true,
+      "attributes.edge_finish": "BURNISHED",
+      "construction_type": "BIFOLD_WALLET",
+      "category": "SMALL_GOODS"
     }
   },
   {
@@ -81,7 +84,8 @@
     "expected_summary": "Form Factor: PADEL_RACKET_BAG | Special Hardware: Heavy Duty Carabiner Clips | Padding: 5mm EVA Foam",
     "checks": {
       "material_sourcing.status": "SPECIAL_SOURCING_NEEDED",
-      "construction_type": "PADEL_RACKET_BAG"
+      "construction_type": "PADEL_RACKET_BAG",
+      "category": "BAG"
     }
   },
   {
@@ -101,10 +105,11 @@
     "post_quote_turns": [],
     "expected_summary": "Form Factor: ZIP_AROUND_LONG_WALLET | Zipper: YKK Excella Gold #5 | Slots: 12 Cards + 1 Coin Zip Pocket",
     "checks": {
-      "pocket_layout.coin_zip_pocket": true,
-      "finish.zipper~": "gold",
-      "exterior_leather~": "navy",
-      "construction_type": "ZIP_AROUND_LONG_WALLET"
+      "attributes.coin_zip_pocket": true,
+      "attributes.zipper~": "gold",
+      "attributes.exterior_leather~": "navy",
+      "construction_type": "ZIP_AROUND_LONG_WALLET",
+      "category": "SMALL_GOODS"
     }
   },
   {
@@ -125,7 +130,8 @@
     "expected_summary": "Form Factor: SLOUCHY_TOTE | Material Status: SPECIAL_SOURCING_NEEDED | Material: Chrome-Tan Olive Green 1.4mm",
     "checks": {
       "material_sourcing.status": "SPECIAL_SOURCING_NEEDED",
-      "construction_type": "SLOUCHY_TOTE"
+      "construction_type": "SLOUCHY_TOTE",
+      "category": "BAG"
     }
   },
   {
@@ -147,8 +153,9 @@
     "expected_summary": "Form Factor: CROSSBODY_CAMERA_BAG | Adjustment: Height +3cm",
     "checks": {
       "height_plus_3": true,
-      "pocket_layout.exterior_pockets>=": 1,
-      "construction_type": "CROSSBODY_CAMERA_BAG"
+      "attributes.exterior_pockets>=": 1,
+      "construction_type": "CROSSBODY_CAMERA_BAG",
+      "category": "BAG"
     }
   },
   {
@@ -168,8 +175,9 @@
     "post_quote_turns": [],
     "expected_summary": "Form Factor: PATTERNED_CARD_HOLDER | Technique: Laser Engraving | Pattern: Batik Mega Mendung",
     "checks": {
-      "customization.type": "LASER_ENGRAVING",
-      "construction_type": "PATTERNED_CARD_HOLDER"
+      "attributes.embossing_type": "LASER_ENGRAVING",
+      "construction_type": "PATTERNED_CARD_HOLDER",
+      "category": "SMALL_GOODS"
     }
   },
   {
@@ -188,7 +196,8 @@
     "post_quote_turns": [],
     "expected_summary": "Form Factor: EXECUTIVE_BRIEFCASE | Hardware: Solid Brass | Reinforcement: Salpa 1.2mm | Labor: 20h",
     "checks": {
-      "construction_type": "EXECUTIVE_BRIEFCASE"
+      "construction_type": "EXECUTIVE_BRIEFCASE",
+      "category": "BAG"
     }
   },
   {

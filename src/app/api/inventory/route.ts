@@ -10,12 +10,12 @@ export async function GET() {
 /** Upsert a stock item. */
 export async function PUT(request: NextRequest) {
   const item = (await request.json().catch(() => null)) as InventoryItem | null;
-  if (!item?.stock_id || !item.name || !item.leather_type) {
-    return Response.json({ error: 'stock_id, name and leather_type are required' }, { status: 400 });
+  if (!item?.stock_id || !item.name || !item.material_type) {
+    return Response.json({ error: 'stock_id, name and material_type are required' }, { status: 400 });
   }
   await getStore().saveInventoryItem({
     ...item,
-    leather_type: item.leather_type.toLowerCase(),
+    material_type: item.material_type.toLowerCase(),
     color: item.color.toLowerCase(),
     thickness_mm: Number(item.thickness_mm),
     available_sqft: Number(item.available_sqft),

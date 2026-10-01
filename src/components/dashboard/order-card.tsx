@@ -1,5 +1,7 @@
 import { MessageSquareWarning } from 'lucide-react';
 import { AutomationBadge, SessionStateBadge } from '@/components/ui/status-badges';
+import { schemaOf } from '@/lib/spec/catalog';
+import { modelLine } from '@/lib/spec/describe';
 import type { OrderPayload } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/format';
@@ -10,12 +12,6 @@ export interface OrderRow {
   awaiting_review_count: number;
   last_message: { sender: string; text: string; created_at: string } | null;
 }
-
-const CATEGORY_LABEL: Record<OrderPayload['craft_category'], string> = {
-  bespoke_bag: 'Bag',
-  bespoke_wallet: 'Wallet',
-  bespoke_shoes: 'Shoes',
-};
 
 export function OrderCard({ row, selected, onSelect }: { row: OrderRow; selected: boolean; onSelect: () => void }) {
   const { order } = row;
@@ -32,7 +28,7 @@ export function OrderCard({ row, selected, onSelect }: { row: OrderRow; selected
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-stone-900">{order.client_info.client_name_wa}</p>
           <p className="truncate text-[11px] text-stone-500">
-            {CATEGORY_LABEL[order.craft_category]} · {order.specifications.silhouette || 'spec in progress'}
+            {order.specifications.construction_type === 'UNSPECIFIED' ? 'Unclassified' : schemaOf(order.craft_category).label} · {modelLine(order.specifications) || 'spec in progress'}
           </p>
         </div>
         {quote > 0 && <p className="shrink-0 text-xs font-semibold text-leather-700">{formatIDR(quote)}</p>}
