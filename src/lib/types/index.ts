@@ -14,6 +14,91 @@ export interface Dimensions {
   height: number;
 }
 
+/**
+ * Precise form factor. Distinguishes e.g. a FLAT_CARD_HOLDER (single flat panel, no fold)
+ * from BIFOLD / TRIFOLD / ACCORDION wallets. Definitions live in `lib/spec/catalog.ts`.
+ */
+export type ConstructionType =
+  | 'UNSPECIFIED'
+  // card holders & wallets
+  | 'FLAT_CARD_HOLDER'
+  | 'PATTERNED_CARD_HOLDER'
+  | 'BIFOLD_WALLET'
+  | 'TRIFOLD_WALLET'
+  | 'ACCORDION_WALLET'
+  | 'ZIP_AROUND_LONG_WALLET'
+  // bags
+  | 'SLING_BAG'
+  | 'CROSSBODY_CAMERA_BAG'
+  | 'MESSENGER_BAG'
+  | 'SLOUCHY_TOTE'
+  | 'STRUCTURED_TOTE'
+  | 'BACKPACK'
+  | 'EXECUTIVE_BRIEFCASE'
+  | 'PADEL_RACKET_BAG'
+  | 'HYBRID_BACKPACK_TOTE'
+  | 'CLUTCH'
+  // shoes
+  | 'DERBY_SHOES'
+  | 'OXFORD_SHOES'
+  | 'LOAFERS'
+  | 'CHELSEA_BOOTS'
+  // anything else the crafter must interpret manually
+  | 'OTHER_CUSTOM';
+
+/** Where the cards / cash / zips go. 0 / false = not requested. */
+export interface PocketLayout {
+  /** Card slots on the front face (flat card holders) or inside-left (wallets). */
+  front_slots: number;
+  /** Card slots on the back face (flat card holders) or inside-right (wallets). */
+  back_slots: number;
+  /** Central pocket between front and back slots (cash / folded notes). */
+  central_pockets: number;
+  /** Full-length cash compartments (bifold / long wallets). */
+  cash_compartments: number;
+  /** Transparent ID / photo window. */
+  id_window: boolean;
+  /** Zippered coin pocket. */
+  coin_zip_pocket: boolean;
+  /** Zippered pockets inside a bag. */
+  interior_zip_pockets: number;
+  /** Open slip pockets on the outside of a bag (front / back / side). */
+  exterior_pockets: number;
+}
+
+export type EdgeTreatment = 'UNSPECIFIED' | 'BURNISHED' | 'EDGE_PAINT' | 'RAW' | 'TURNED_EDGE';
+
+/** Leather edge, surface and stitching attributes. Empty string / UNSPECIFIED = not discussed yet. */
+export interface FinishDetails {
+  edge_treatment: EdgeTreatment;
+  /** Surface character, e.g. "matte", "pull-up", "saffiano texture". */
+  surface_finish: string;
+  /** Color / dye finish, e.g. "biru tosca", "black". */
+  color_finish: string;
+  thread_color: string;
+  /** e.g. "linen", "waxed polyester". */
+  thread_material: string;
+  /** e.g. "diamond stitch", "saddle stitch". */
+  stitch_pattern: string;
+  /** e.g. "YKK Excella Gold #5". */
+  zipper: string;
+  /** Strap choice for bags, e.g. "detachable full-leather strap". */
+  strap: string;
+  /** Closures / buckles / reinforcement, e.g. "solid brass buckles, salpa 1.2mm". */
+  hardware_notes: string;
+}
+
+/** UNSPECIFIED = never discussed; NONE = client declined. */
+export type CustomizationType = 'UNSPECIFIED' | 'NONE' | 'EMBOSS_INITIALS' | 'EMBOSS_LOGO' | 'LASER_ENGRAVING';
+
+export interface Customization {
+  type: CustomizationType;
+  /** Text / artwork, e.g. "R.W" or "batik mega mendung". */
+  detail: string;
+  /** e.g. "bottom-right corner, outside". */
+  placement: string;
+}
+
 export interface Specifications {
   silhouette: string;
   target_capacity: string;
@@ -23,6 +108,10 @@ export interface Specifications {
   structure_temper: string;
   stitching_method: string;
   edge_finish: string;
+  construction_type: ConstructionType;
+  pocket_layout: PocketLayout;
+  finish: FinishDetails;
+  customization: Customization;
 }
 
 export interface MaterialSourcing {
@@ -46,9 +135,29 @@ export interface PatternAndBom {
   suggested_quotation_idr: number;
 }
 
+export type MockupEngine = 'gemini-image' | 'imagen' | 'offline-svg';
+
 export interface MediaAssets {
   original_sketch_url?: string;
   ai_generated_mockup_url?: string;
+  /** Which renderer produced the current mockup (offline-svg ignores free-text feedback). */
+  mockup_engine?: MockupEngine;
+  /** Crafter feedback applied to the mockup, oldest first. */
+  mockup_feedback?: string[];
+}
+
+/** Multi-turn requirement-gathering progress, owned by the orchestrator. */
+export interface IntakeProgress {
+  /** Checklist topics the AI has already asked about (each optional topic is asked at most once). */
+  asked_topics: string[];
+  /** Topics in the AI's most recent question bubble; used to interpret short answers like "full kulit mas". */
+  last_asked: string[];
+  /** What the vision model saw in the client's sketch / photo. */
+  vision_notes?: string;
+  /** Last client message already processed (prevents re-applying "+3 cm" style edits). */
+  processed_message_id?: string;
+  /** Number of AI gathering questions sent. */
+  question_rounds: number;
 }
 
 export interface OrderPayload {
@@ -68,6 +177,7 @@ export interface OrderPayload {
   material_sourcing: MaterialSourcing;
   pattern_and_bom: PatternAndBom;
   media_assets: MediaAssets;
+  intake?: IntakeProgress;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,10 +267,9 @@ export interface CategoryPreset {
 export interface IntakeResult {
   craft_category: CraftCategory;
   specifications: Specifications;
-  missing_fields: string[];
-  /** 0..1 self-reported confidence that the client's intent is understood. */
-  confidence: number;
-  reply_to_client: string;
+  /** True when the client signalled they have nothing more to add ("itu saja kak"). */
+  client_finished: boolean;
+  vision_notes?: string;
 }
 
 export interface OrchestratorResult {

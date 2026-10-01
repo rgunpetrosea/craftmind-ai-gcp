@@ -3,7 +3,7 @@ import type { BomComponent } from '@/lib/types';
 export const CM2_PER_SQFT = 929.0304;
 
 /** Pieces cut from a different material than the exterior leather. */
-export const NON_EXTERIOR_PART = /lining|pelapis|outsole|stiffener|interfacing/i;
+export const NON_EXTERIOR_PART = /lining|pelapis|outsole|stiffener|interfacing|foam|padding/i;
 
 /** "30 x 22", "30x22 cm", "Ø 12" → area in cm² (× qty). Returns 0 when unparseable. */
 export function componentAreaCm2(c: BomComponent): number {

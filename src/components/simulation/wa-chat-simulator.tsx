@@ -1,10 +1,11 @@
 'use client';
 
-import { Bot, CheckCheck, Hand, ImagePlus, Loader2, Mic, PauseCircle, RotateCcw, Send, UserRound } from 'lucide-react';
+import { Bot, CheckCheck, Circle, CircleCheck, Hand, ImagePlus, ListChecks, Loader2, Mic, PauseCircle, RotateCcw, Send, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { ESCALATION_LABEL } from '@/components/ui/status-badges';
 import { postJson, usePoll } from '@/lib/hooks/use-poll';
+import { getConstruction, normalizeSpecifications, requiredTopics, TOPICS, type TopicId } from '@/lib/spec/catalog';
 import type { ChatMessage, Conversation, InboundWhatsAppEvent, OrderPayload } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { WaText } from './wa-text';
@@ -17,11 +18,66 @@ interface SessionResponse {
 }
 
 const QUICK_MESSAGES = [
-  'Halo kak, mau pesan tas custom dong',
-  'Sling bag pakai flap & kunci putar, veg-tan coklat 1.6mm',
-  'Ukurannya 30x10x22 cm, jahit tangan ya. Itu saja kak',
+  'Halo kak, mau bikin dompet kartu pipih',
+  'Muat 4 kartu + selipan uang di tengah, Epsom hitam',
+  'Ukuran 10x7 cm, emboss inisial R.W di pojok kanan bawah',
+  'Terserah mas untuk lainnya. Itu saja kak',
   'Mau bicara dengan admin/crafter',
 ];
+
+interface Scenario {
+  id: string;
+  category: string;
+  model: string;
+  needs_attachment: boolean;
+  client_turns: string[];
+  followup_turns: string[];
+  post_quote_turns: string[];
+  expected_summary: string;
+}
+
+const scenarioTurns = (sc: Scenario) => [...sc.client_turns, ...sc.followup_turns, ...sc.post_quote_turns];
+
+const TOPIC_LABEL: Record<TopicId, string> = {
+  construction: 'Model',
+  dimensions: 'Ukuran',
+  leather: 'Kulit',
+  card_layout: 'Slot kartu',
+  customization: 'Emboss',
+  thread: 'Benang',
+  lining: 'Lining',
+  edge: 'Pinggiran',
+  zipper: 'Sleting',
+  strap: 'Strap',
+  hardware: 'Hardware',
+};
+
+/** Requirement-gathering progress: required topics plus the optional details this form factor asks about. */
+function SpecChecklist({ order }: { order: OrderPayload }) {
+  const spec = normalizeSpecifications(order.specifications);
+  const topics = [...new Set<TopicId>([...requiredTopics(spec), ...getConstruction(spec.construction_type).detail_topics])];
+  const asked = new Set(order.intake?.asked_topics ?? []);
+  return (
+    <div className="flex flex-wrap items-center gap-1 bg-white/70 px-3 py-1.5 text-[10px] text-stone-600">
+      <ListChecks className="h-3 w-3 text-wa-header" />
+      {topics.map((t) => {
+        const done = TOPICS[t].isFilled(spec);
+        return (
+          <span
+            key={t}
+            title={TOPICS[t].required ? 'required' : 'optional detail'}
+            className={cn('inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5', done ? 'bg-emerald-100 text-emerald-800' : asked.has(t) ? 'bg-amber-100 text-amber-900' : 'bg-stone-100')}
+          >
+            {done ? <CircleCheck className="h-2.5 w-2.5" /> : <Circle className="h-2.5 w-2.5" />}
+            {TOPIC_LABEL[t]}
+            {TOPICS[t].required && '*'}
+          </span>
+        );
+      })}
+      {order.session_state === 'PENDING_CRAFTER_APPROVAL' && <span className="ml-auto font-semibold text-emerald-700">Spec card terkunci ✓</span>}
+    </div>
+  );
+}
 
 const MAX_IMAGE_PX = 1024;
 
@@ -54,6 +110,9 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
   const [sendAs, setSendAs] = useState<'CLIENT' | 'CRAFTER'>('CLIENT');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [scenario, setScenario] = useState<Scenario | null>(null);
+  const [step, setStep] = useState(0);
+  const { data: scenarioData } = usePoll<{ scenarios: Scenario[] }>('/api/scenarios', 60 * 60 * 1000);
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
@@ -99,6 +158,24 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
     await send({ text });
   }
 
+  async function startScenario(id: string) {
+    const sc = scenarioData?.scenarios.find((x) => x.id === id) ?? null;
+    setScenario(sc);
+    setStep(0);
+    if (!sc) return;
+    await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}`, { method: 'DELETE' });
+    setNotice(`${sc.id}: ${sc.model}. Kirim pesan klien satu per satu, tunggu balasan AI di antaranya.${sc.needs_attachment ? ' Skenario asli juga mengirim foto/sketsa; lampirkan lewat ikon gambar.' : ''}`);
+    await refresh();
+  }
+
+  async function sendScenarioStep() {
+    if (!scenario) return;
+    const turn = scenarioTurns(scenario)[step];
+    if (!turn) return;
+    setStep(step + 1);
+    await sendText(turn);
+  }
+
   async function onFile(file: File | undefined, type: 'image' | 'audio') {
     if (!file) return;
     if (type === 'image') {
@@ -124,6 +201,8 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
   }
 
   async function resetChat() {
+    setScenario(null);
+    setStep(0);
     await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}`, { method: 'DELETE' });
     setNotice('Started a new draft order');
     await refresh();
@@ -167,6 +246,8 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
         </div>
       )}
 
+      {order && order.session_state !== 'IDLE' && order.session_state !== 'APPROVED' && <SpecChecklist order={order} />}
+
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
         {messages.length === 0 && (
@@ -184,18 +265,58 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
         )}
       </div>
 
-      {/* Quick replies */}
-      <div className="flex gap-1.5 overflow-x-auto bg-wa-wallpaper px-3 pb-2">
-        {QUICK_MESSAGES.map((q) => (
-          <button
-            key={q}
-            disabled={busy}
-            onClick={() => sendText(q)}
-            className="shrink-0 rounded-full bg-white px-3 py-1 text-[11px] text-wa-header shadow-sm ring-1 ring-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
-          >
-            {q.length > 34 ? `${q.slice(0, 32)}…` : q}
-          </button>
-        ))}
+      {/* Scenario player / quick replies */}
+      <div className="space-y-1.5 bg-wa-wallpaper px-3 pb-2">
+        <select
+          value={scenario?.id ?? ''}
+          onChange={(e) => startScenario(e.target.value)}
+          className="w-full rounded-md bg-white px-2 py-1 text-[11px] text-stone-700 ring-1 ring-stone-300"
+          aria-label="Test scenario"
+        >
+          <option value="">Free chat — or pick a test scenario from scenarios.csv…</option>
+          {scenarioData?.scenarios.map((sc) => (
+            <option key={sc.id} value={sc.id}>
+              {sc.id} · {sc.category} · {sc.model}
+            </option>
+          ))}
+        </select>
+        {scenario ? (
+          (() => {
+            const turns = scenarioTurns(scenario);
+            const next = turns[step];
+            return next ? (
+              <button
+                disabled={busy || !!data?.ai_pending}
+                onClick={sendScenarioStep}
+                className="w-full rounded-lg bg-white px-3 py-1.5 text-left text-[11px] text-wa-header shadow-sm ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                <span className="font-semibold">
+                  Kirim pesan {step + 1}/{turns.length}
+                  {step >= scenario.client_turns.length && step < scenario.client_turns.length + scenario.followup_turns.length ? ' (jawaban lanjutan)' : ''}
+                  {step >= scenario.client_turns.length + scenario.followup_turns.length ? ' (revisi setelah spec card)' : ''}:
+                </span>{' '}
+                {next}
+              </button>
+            ) : (
+              <p className="rounded-lg bg-white/80 px-3 py-1.5 text-[11px] text-stone-600">
+                Skenario selesai. Harapan: <span className="font-medium">{scenario.expected_summary}</span>
+              </p>
+            );
+          })()
+        ) : (
+          <div className="flex gap-1.5 overflow-x-auto">
+            {QUICK_MESSAGES.map((q) => (
+              <button
+                key={q}
+                disabled={busy}
+                onClick={() => sendText(q)}
+                className="shrink-0 rounded-full bg-white px-3 py-1 text-[11px] text-wa-header shadow-sm ring-1 ring-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {q.length > 34 ? `${q.slice(0, 32)}…` : q}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Composer */}

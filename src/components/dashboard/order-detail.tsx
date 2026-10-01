@@ -3,7 +3,6 @@
 import {
   Bot,
   CheckCircle2,
-  ClipboardList,
   Hand,
   Loader2,
   MessagesSquare,
@@ -14,6 +13,7 @@ import {
   Ruler,
   Send,
   Sparkles,
+  Wand2,
   Wallet,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -24,11 +24,12 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { AutomationBadge, ESCALATION_LABEL, SessionStateBadge } from '@/components/ui/status-badges';
 import type { QuotationBreakdown } from '@/lib/agents/pricing';
 import { postJson, usePoll } from '@/lib/hooks/use-poll';
-import type { AutomationMode, ChatMessage, InventoryItem, OrderPayload } from '@/lib/types';
+import type { AutomationMode, ChatMessage, CraftCategory, InventoryItem, OrderPayload, Specifications } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/format';
 import { BomTable } from './bom-table';
 import { SideBySidePreview } from './side-by-side-preview';
+import { SpecEditor } from './spec-editor';
 
 interface DetailResponse {
   order: OrderPayload;
@@ -37,15 +38,7 @@ interface DetailResponse {
   allocated_stock: InventoryItem | null;
 }
 
-const SPEC_LABELS: Array<[keyof OrderPayload['specifications'], string]> = [
-  ['silhouette', 'Silhouette'],
-  ['target_capacity', 'Capacity'],
-  ['exterior_leather', 'Exterior leather'],
-  ['lining_material', 'Lining'],
-  ['structure_temper', 'Structure'],
-  ['stitching_method', 'Stitching'],
-  ['edge_finish', 'Edge finish'],
-];
+const ENGINE_LABEL = { 'gemini-image': 'Gemini image model', imagen: 'Imagen', 'offline-svg': 'Offline concept (no AI image)' } as const;
 
 export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged: () => void }) {
   const { data, error, refresh } = usePoll<DetailResponse>(`/api/orders/${orderId}`, 2500);
@@ -54,6 +47,7 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
   const [note, setNote] = useState('');
   const [reply, setReply] = useState('');
   const [flash, setFlash] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState('');
 
   if (error && !data) return <p className="p-6 text-sm text-red-600">{error}</p>;
   if (!data) {
@@ -69,20 +63,33 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
   const bom = order.pattern_and_bom;
   const quoteValue = quoteOverride?.orderId === orderId ? quoteOverride.value : String(bom.suggested_quotation_idr || '');
 
-  async function act(key: string, fn: () => Promise<unknown>, success: string) {
+  /** Runs an action, shows `success` (or a message derived from the response) and reloads. Resolves true on success. */
+  async function act<T>(key: string, fn: () => Promise<T>, success: string | ((result: T) => string)): Promise<boolean> {
     setBusy(key);
     setFlash(null);
     try {
-      await fn();
-      setFlash(success);
+      const result = await fn();
+      setFlash(typeof success === 'function' ? success(result) : success);
       await refresh();
       onChanged();
+      return true;
     } catch (err) {
       setFlash(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(null);
     }
   }
+
+  const recalculate = (spec: Specifications, category: CraftCategory) =>
+    act('recalc', () => postJson(`/api/orders/${orderId}/recalculate`, { specifications: spec, craft_category: category }), 'Specification saved — BOM, SqFt, labor and quotation recalculated');
+
+  const regenerateMockup = (withFeedback: boolean) =>
+    act(
+      'mockup',
+      () => postJson<{ engine: keyof typeof ENGINE_LABEL; note?: string }>('/api/ai/mock-generator', { order_id: orderId, adjustment: withFeedback ? feedback : undefined }),
+      (r) => r.note ?? `Mockup re-generated with ${ENGINE_LABEL[r.engine]}${withFeedback ? ' using your feedback' : ''}`,
+    ).then((ok) => ok && withFeedback && setFeedback(''));
 
   const setMode = (mode: AutomationMode, label: string) =>
     act(mode, () => postJson(`/api/orders/${orderId}/takeover`, { mode }), label);
@@ -132,48 +139,60 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
         {flash && <p className="mt-3 rounded-md bg-stone-50 px-3 py-2 text-xs text-stone-600">{flash}</p>}
       </Card>
 
-      {/* Side-by-side review */}
+      {/* Side-by-side review + mockup feedback */}
       <Card>
         <CardHeader
           title="Sketch → AI studio mockup"
           icon={<Sparkles className="h-4 w-4 text-leather-500" />}
           action={
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!!busy || !s.silhouette}
-              onClick={() => act('mockup', () => postJson('/api/ai/mock-generator', { order_id: orderId }), 'Mockup regenerated')}
-            >
-              {busy === 'mockup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Regenerate
-            </Button>
+            order.media_assets.mockup_engine && (
+              <Badge tone={order.media_assets.mockup_engine === 'offline-svg' ? 'amber' : 'green'}>{ENGINE_LABEL[order.media_assets.mockup_engine]}</Badge>
+            )
           }
         />
-        <div className="p-4">
+        <div className="space-y-4 p-4">
           <SideBySidePreview sketchUrl={order.media_assets.original_sketch_url} mockupUrl={order.media_assets.ai_generated_mockup_url} />
+
+          <div className="rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-700" htmlFor="mockup-feedback">
+              <Wand2 className="h-3.5 w-3.5 text-leather-500" /> Prompt adjustment
+            </label>
+            <textarea
+              id="mockup-feedback"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              rows={2}
+              disabled={order.session_state === 'APPROVED'}
+              placeholder="e.g. Change to a flat card sleeve, show the open card slots from the front view"
+              className="mt-2 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button size="sm" disabled={!!busy || !feedback.trim() || !s.construction_type || s.construction_type === 'UNSPECIFIED'} onClick={() => regenerateMockup(true)}>
+                {busy === 'mockup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Re-generate mockup with feedback
+              </Button>
+              <Button variant="ghost" size="sm" disabled={!!busy || !s.silhouette} onClick={() => regenerateMockup(false)}>
+                <RefreshCw className="h-3.5 w-3.5" /> Re-render as is
+              </Button>
+              <span className="text-[11px] text-stone-500">Only the mockup changes; the specification, BOM and quote stay as they are.</span>
+            </div>
+            {order.media_assets.mockup_feedback?.length ? (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {order.media_assets.mockup_feedback.map((f, i) => (
+                  <li key={i}>
+                    <button type="button" onClick={() => setFeedback(f)} title="Reuse this feedback" className="rounded-full bg-white px-2.5 py-0.5 text-[11px] text-stone-600 ring-1 ring-stone-200 hover:bg-stone-100">
+                      {i + 1}. {f.length > 50 ? `${f.slice(0, 48)}…` : f}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </div>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {/* Specification */}
-        <Card>
-          <CardHeader title="Structured specification" icon={<ClipboardList className="h-4 w-4 text-leather-500" />} />
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 p-4 text-sm">
-            <div className="col-span-2">
-              <dt className="text-[11px] uppercase tracking-wide text-stone-500">Dimensions (L × W × H)</dt>
-              <dd className="flex items-center gap-1.5 font-medium text-stone-800">
-                <Ruler className="h-3.5 w-3.5 text-stone-400" />
-                {s.dimensions_cm.length || '?'} × {s.dimensions_cm.width || '?'} × {s.dimensions_cm.height || '?'} cm
-              </dd>
-            </div>
-            {SPEC_LABELS.map(([key, label]) => (
-              <div key={key}>
-                <dt className="text-[11px] uppercase tracking-wide text-stone-500">{label}</dt>
-                <dd className={cn('font-medium', s[key] ? 'text-stone-800' : 'text-stone-300')}>{(s[key] as string) || 'missing'}</dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
+      <SpecEditor key={order.order_id} order={order} busy={busy === 'recalc'} onRecalculate={recalculate} />
 
+      <div className="grid gap-4 xl:grid-cols-2">
         {/* Sourcing */}
         <Card>
           <CardHeader title="Material sourcing" icon={<PackageSearch className="h-4 w-4 text-leather-500" />} />
@@ -229,6 +248,7 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
                     ['Hardware', breakdown.hardware_idr],
                     ['Labor', breakdown.labor_idr],
                     ['Sourcing', breakdown.sourcing_idr],
+                    ['Customization', breakdown.customization_idr ?? 0],
                     ['Margin', breakdown.margin_idr],
                   ] as const
                 ).map(([label, v]) => (

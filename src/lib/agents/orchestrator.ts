@@ -1,9 +1,11 @@
-import { missingFields, runIntakeAgent } from '@/lib/agents/intake-agent';
+import { applyPresetDefaults, composeReply, lastClientBurst, runIntakeAgent } from '@/lib/agents/intake-agent';
 import { defaultHardware, runPatternAgent } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { runVisualAgent } from '@/lib/agents/visual-agent';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
-import type { CategoryPreset, CraftCategory, OrchestratorResult, OrderPayload } from '@/lib/types';
+import { filledTopicCount, normalizeSpecifications, planConversation } from '@/lib/spec/catalog';
+import { specCardText } from '@/lib/spec/describe';
+import type { IntakeProgress, OrchestratorResult, OrderPayload } from '@/lib/types';
 import { nowIso } from '@/lib/utils/format';
 import {
   CONFUSION_STRIKE_LIMIT,
@@ -16,7 +18,9 @@ import { sendToClient } from '@/lib/whatsapp';
 
 /**
  * Multi-agent execution engine:
- *   Intake (Flash) → [Pattern/BOM (Pro) ∥ Visual mockup] → Inventory match → Quote
+ *   Intake (Flash vision + structured output) → planner → ask the next question(s)      ... until every required parameter
+ *   is collected and each optional detail (embossing, thread, lining, ...) has been offered once, then
+ *   [Pattern/BOM (Pro) ∥ Visual mockup] → Inventory match → Quote → PENDING_CRAFTER_APPROVAL
  *
  * Takeover is checked before the run and again before anything is sent, because
  * the crafter may take over while Gemini is still thinking. `force` lets the
@@ -24,11 +28,9 @@ import { sendToClient } from '@/lib/whatsapp';
  * no AI message while the takeover is active.
  */
 
-const CONFIDENCE_FLOOR = 0.6;
-
 type OrchestratorFields = Pick<
   OrderPayload,
-  'craft_category' | 'specifications' | 'session_state' | 'material_sourcing' | 'pattern_and_bom' | 'media_assets'
+  'craft_category' | 'specifications' | 'session_state' | 'material_sourcing' | 'pattern_and_bom' | 'media_assets' | 'intake'
 >;
 
 /**
@@ -94,25 +96,24 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     return { order, stage: 'SKIPPED_TAKEOVER' };
   }
 
-  const [messages, presets, conversation] = await Promise.all([
+  const [messages, conversation] = await Promise.all([
     store.listMessages(orderId),
-    store.listPresets(),
     store.getConversation(order.client_info.phone_number),
   ]);
-  const presetFor = (c: CraftCategory): CategoryPreset => presets.find((p) => p.category === c)!;
+  const known = normalizeSpecifications(order.specifications);
+  const progress: IntakeProgress = order.intake ?? { asked_topics: [], last_asked: [], question_rounds: 0 };
+  const burst = lastClientBurst(messages);
+  const processed_message_id = burst.at(-1)?.id ?? progress.processed_message_id;
 
-  // --- Agent 1: intake -----------------------------------------------------
-  const intake = await runIntakeAgent({
-    messages,
-    known: order.specifications,
-    category: order.craft_category,
-    clientName: order.client_info.client_name_wa,
-    presetFor,
-  });
+  // --- Agent 1: vision + structured intake -----------------------------------
+  const intake = await runIntakeAgent({ messages, known, category: order.craft_category, progress });
+  // Once a spec card has been sent, later messages are corrections: re-quote instead of re-opening optional questions.
+  const wasLocked = order.session_state === 'PENDING_CRAFTER_APPROVAL';
+  const clientFinished = intake.client_finished || wasLocked;
+  const plan = planConversation(intake.specifications, progress, clientFinished);
 
-  // --- Confusion rule ------------------------------------------------------
-  const before = missingFields(order.specifications).length;
-  const stalled = intake.missing_fields.length > 0 && intake.missing_fields.length >= before && intake.confidence < CONFIDENCE_FLOOR;
+  // --- Confusion rule: no checklist progress while the AI is still asking ----
+  const stalled = !plan.ready && !clientFinished && filledTopicCount(intake.specifications) <= filledTopicCount(known);
   if (conversation) {
     conversation.confusion_strikes = stalled ? conversation.confusion_strikes + 1 : 0;
     conversation.updated_at = nowIso();
@@ -120,7 +121,11 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   }
 
   if (conversation && conversation.confusion_strikes >= CONFUSION_STRIKE_LIMIT) {
-    const latest = await commit(orderId, { craft_category: intake.craft_category, specifications: intake.specifications });
+    const latest = await commit(orderId, {
+      craft_category: intake.craft_category,
+      specifications: intake.specifications,
+      intake: { ...progress, vision_notes: intake.vision_notes, processed_message_id },
+    });
     if (!isAiBlocked(latest)) {
       setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE');
       await store.saveOrder(latest);
@@ -131,59 +136,70 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     return { order: latest, stage: 'ESCALATED', reply: HANDOFF_MESSAGES.CONFUSION_RULE };
   }
 
-  // --- Still gathering requirements ---------------------------------------
-  if (intake.missing_fields.length > 0) {
+  // --- Still gathering: ask the next one or two things, naturally -------------
+  if (!plan.ready) {
+    const nextProgress: IntakeProgress = {
+      asked_topics: [...new Set([...progress.asked_topics, ...plan.ask])],
+      last_asked: plan.ask,
+      question_rounds: progress.question_rounds + 1,
+      vision_notes: intake.vision_notes,
+      processed_message_id,
+    };
+    const reply = await composeReply({
+      clientName: order.client_info.client_name_wa,
+      plan,
+      spec: intake.specifications,
+      messages,
+      visionNotes: intake.vision_notes,
+      isFirstTurn: !messages.some((m) => m.sender === 'AI'),
+    });
     const latest = await commit(orderId, {
       craft_category: intake.craft_category,
       specifications: intake.specifications,
       session_state: 'REQUIREMENT_GATHERING',
+      intake: nextProgress,
     });
-    const sent = await replyIfStillAllowed(orderId, intake.reply_to_client);
-    return { order: latest, stage: sent ? 'GATHERING' : 'SKIPPED_TAKEOVER', reply: intake.reply_to_client };
+    const sent = await replyIfStillAllowed(orderId, reply);
+    return { order: latest, stage: sent ? 'GATHERING' : 'SKIPPED_TAKEOVER', reply };
   }
 
-  // --- Complete spec → pattern, mockup, sourcing, quote --------------------
+  // --- Spec complete → lock it, then pattern, mockup, sourcing, quote ---------
   const preset = await getPreset(intake.craft_category);
-  const specChanged =
-    JSON.stringify(intake.specifications) !== JSON.stringify(order.specifications) || intake.craft_category !== order.craft_category;
+  const spec = applyPresetDefaults(intake.specifications, preset);
+  const specChanged = JSON.stringify(spec) !== JSON.stringify(known) || intake.craft_category !== order.craft_category;
   const needsBuild = specChanged || order.pattern_and_bom.components_breakdown.length === 0;
 
   let patch: Partial<OrchestratorFields> = {
     craft_category: intake.craft_category,
-    specifications: intake.specifications,
+    specifications: spec,
     session_state: 'PENDING_CRAFTER_APPROVAL',
+    intake: { ...progress, last_asked: [], vision_notes: intake.vision_notes, processed_message_id },
   };
 
   if (needsBuild) {
-    const sketchUrl = order.media_assets.original_sketch_url;
     const [draft, mockup, inventory] = await Promise.all([
-      runPatternAgent(intake.craft_category, intake.specifications, preset),
+      runPatternAgent(spec, preset),
       runVisualAgent({
         orderId,
         category: intake.craft_category,
-        spec: intake.specifications,
-        hardware: defaultHardware(intake.craft_category, intake.specifications),
-        sketchUrl,
+        spec,
+        hardware: defaultHardware(spec),
+        sketchUrl: order.media_assets.original_sketch_url,
       }),
       store.listInventory(),
     ]);
-    const quote = assembleQuote(draft, intake.specifications, inventory, preset);
+    const quote = assembleQuote(draft, spec, inventory, preset);
     patch = {
       ...patch,
       material_sourcing: quote.material_sourcing,
       pattern_and_bom: quote.pattern_and_bom,
-      media_assets: { ...order.media_assets, ai_generated_mockup_url: mockup.url },
+      media_assets: { ...order.media_assets, ai_generated_mockup_url: mockup.url, mockup_engine: mockup.engine },
     };
   }
 
   const latest = await commit(orderId, patch);
-  const s = intake.specifications;
   const reply = needsBuild
-    ? `Siap kak ${order.client_info.client_name_wa}! ✨ Spesifikasi sudah lengkap:\n` +
-      `• ${s.silhouette} — ${s.dimensions_cm.length}x${s.dimensions_cm.width}x${s.dimensions_cm.height} cm\n` +
-      `• ${s.exterior_leather}, ${s.lining_material}\n` +
-      `• ${s.stitching_method}, ${s.edge_finish}\n` +
-      `Crafter kami sedang meninjau desain & penawarannya, akan kami kirim segera ya 🙏`
+    ? specCardText(order.client_info.client_name_wa, spec, { updated: wasLocked })
     : 'Catatan kakak sudah kami teruskan ke crafter kami ya 🙏';
   const sent = await replyIfStillAllowed(orderId, reply);
   return { order: latest, stage: sent ? 'QUOTED' : 'SKIPPED_TAKEOVER', reply };

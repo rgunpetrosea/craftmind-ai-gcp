@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   if (!category || !spec) return Response.json({ error: 'order_id or craft_category + specifications required' }, { status: 400 });
 
   const preset = await getPreset(category);
-  const [draft, inventory] = await Promise.all([runPatternAgent(category, spec, preset), store.listInventory()]);
+  const [draft, inventory] = await Promise.all([runPatternAgent(spec, preset), store.listInventory()]);
   const quote = assembleQuote(draft, spec, inventory, preset);
 
   if (order) {

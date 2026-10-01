@@ -1,0 +1,211 @@
+[
+  {
+    "id": "SCN-01",
+    "category": "Card Holder",
+    "model": "Flat Single Panel (Bukan Bifold)",
+    "inbound_type": "Kirim foto reference + Teks singkat",
+    "needs_attachment": true,
+    "client_turns": [
+      "Mas mau bikin dompet kartu pipih kayak foto ini, muat 4 kartu + selipan uang tunai di tengah. Warna hitam kaku.",
+      "Epsom aja mas, pakenin inisial R.W di pojok kanan bawah."
+    ],
+    "followup_turns": [
+      "Ukurannya sekitar 10x7 cm ya mas",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: FLAT_CARD_HOLDER | Slot: 4 Front/Back + 1 Central Pocket | Material: Epsom Black | Emboss: Custom Initial 'R.W'",
+    "checks": {
+      "customization.type": "EMBOSS_INITIALS",
+      "exterior_leather~": "epsom",
+      "construction_type": "FLAT_CARD_HOLDER"
+    }
+  },
+  {
+    "id": "SCN-02",
+    "category": "Tas Laptop",
+    "model": "Messenger Flap Bag 14 inch",
+    "inbound_type": "Vague Text + Foto Sketsa Tangan",
+    "needs_attachment": true,
+    "client_turns": [
+      "Bikin tas laptop 14 inch, kaku tegap, ada flap magnet sama saku zipper di dalem.",
+      "Full kulit mas, biar elegan."
+    ],
+    "followup_turns": [
+      "Ukuran ikut laptop 14 inch aja mas, kulit veg-tan coklat 1.6mm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: MESSENGER_BAG | Laptop Size: 14 inch | Material: Veg-Tan Brown 1.6mm | Labor Hours: 12h",
+    "checks": {
+      "construction_type": "MESSENGER_BAG"
+    }
+  },
+  {
+    "id": "SCN-03",
+    "category": "Dompet Cowok",
+    "model": "Bifold Wallet Classic",
+    "inbound_type": "Detailed Request + Budget Mention",
+    "needs_attachment": false,
+    "client_turns": [
+      "Mas, mau dompet lipat cowok bahan kulit nabati natural. Muat 6 kartu + 2 slot uang. Ada tempat foto transparan ga?",
+      "Burnished edge polos aja mas biar vintage."
+    ],
+    "followup_turns": [
+      "Ukurannya 11x9 cm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: BIFOLD_WALLET | Slot: 6 Card + 1 ID Window + 2 Cash Compartments | Finish: Burnished Edge",
+    "checks": {
+      "pocket_layout.id_window": true,
+      "finish.edge_treatment": "BURNISHED",
+      "construction_type": "BIFOLD_WALLET"
+    }
+  },
+  {
+    "id": "SCN-04",
+    "category": "Tas Padel / Sport",
+    "model": "Padel Racket Cover Bag",
+    "inbound_type": "Niche Product Request",
+    "needs_attachment": false,
+    "client_turns": [
+      "Bisa bikin tas raket padel dari kulit sintetis/asli ga? Bikin kaku biar raket ga lecet.",
+      "Iya strap selempang lepas pasang ya."
+    ],
+    "followup_turns": [
+      "Oke pakai Pull-Up tebal 2.0mm ya mas, ukuran 30x10x60 cm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: PADEL_RACKET_BAG | Special Hardware: Heavy Duty Carabiner Clips | Padding: 5mm EVA Foam",
+    "checks": {
+      "material_sourcing.status": "SPECIAL_SOURCING_NEEDED",
+      "construction_type": "PADEL_RACKET_BAG"
+    }
+  },
+  {
+    "id": "SCN-05",
+    "category": "Dompet Cewek",
+    "model": "Zip-Around Long Wallet",
+    "inbound_type": "Complex Multi-Slot Request",
+    "needs_attachment": false,
+    "client_turns": [
+      "Mau dompet panjang cewek pake sleting melingkar. Dalamnya mau 12 slot kartu + tempat koin pake zipper.",
+      "Epsom Navy + Sleting Gold ya mas."
+    ],
+    "followup_turns": [
+      "Ukuran 20x2.5x10 cm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: ZIP_AROUND_LONG_WALLET | Zipper: YKK Excella Gold #5 | Slots: 12 Cards + 1 Coin Zip Pocket",
+    "checks": {
+      "pocket_layout.coin_zip_pocket": true,
+      "finish.zipper~": "gold",
+      "exterior_leather~": "navy",
+      "construction_type": "ZIP_AROUND_LONG_WALLET"
+    }
+  },
+  {
+    "id": "SCN-06",
+    "category": "Handbag / Tote",
+    "model": "Slouchy Shoulder Tote",
+    "inbound_type": "Material Sourcing Case",
+    "needs_attachment": false,
+    "client_turns": [
+      "Mas ada bahan kulit warna Hijau Zaitun (Olive Green) ga? Mau bikin tote bag lemas untuk kuliah.",
+      "Gapapa nambah waktu sourcing mas, mau Olive Green."
+    ],
+    "followup_turns": [
+      "Chrome-tan olive green 1.4mm ya mas, ukuran 38x14x32 cm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: SLOUCHY_TOTE | Material Status: SPECIAL_SOURCING_NEEDED | Material: Chrome-Tan Olive Green 1.4mm",
+    "checks": {
+      "material_sourcing.status": "SPECIAL_SOURCING_NEEDED",
+      "construction_type": "SLOUCHY_TOTE"
+    }
+  },
+  {
+    "id": "SCN-07",
+    "category": "Tas Selempang",
+    "model": "Mini Crossbody Camera Bag",
+    "inbound_type": "Confused Client / Fast Re-edit",
+    "needs_attachment": false,
+    "client_turns": [
+      "Bikin tas selempang kecil buat kamera mirrorless."
+    ],
+    "followup_turns": [
+      "Ukuran 18x8x14 cm, kulit veg-tan coklat 1.6mm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [
+      "Eh mas ternyata ukurannya kurang tinggi 3cm, sama tambah saku depan dong."
+    ],
+    "expected_summary": "Form Factor: CROSSBODY_CAMERA_BAG | Adjustment: Height +3cm",
+    "checks": {
+      "height_plus_3": true,
+      "pocket_layout.exterior_pockets>=": 1,
+      "construction_type": "CROSSBODY_CAMERA_BAG"
+    }
+  },
+  {
+    "id": "SCN-08",
+    "category": "Dompet Pattern",
+    "model": "Laser Engraved Pattern Wallet",
+    "inbound_type": "Custom Artwork Request",
+    "needs_attachment": false,
+    "client_turns": [
+      "Mas bisa ukir motif batik mega mendung di cover luar dompet kartu ga?",
+      "Sip, kirim gambaran jadinya dong."
+    ],
+    "followup_turns": [
+      "Pakai veg-tan natural aja mas, ukuran 10x7 cm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: PATTERNED_CARD_HOLDER | Technique: Laser Engraving | Pattern: Batik Mega Mendung",
+    "checks": {
+      "customization.type": "LASER_ENGRAVING",
+      "construction_type": "PATTERNED_CARD_HOLDER"
+    }
+  },
+  {
+    "id": "SCN-09",
+    "category": "Tas Laptop Premium",
+    "model": "Executive Briefcase",
+    "inbound_type": "High-End Custom Order",
+    "needs_attachment": false,
+    "client_turns": [
+      "Mau bikin tas kerja kantor tegap, muat laptop 16 inch + dokumen A4. Hardware mau kuningan asli (Solid Brass)."
+    ],
+    "followup_turns": [
+      "Epsom hitam 1.8mm ya mas, ukuran 42x10x31 cm",
+      "Terserah mas untuk lainnya. Itu saja kak"
+    ],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: EXECUTIVE_BRIEFCASE | Hardware: Solid Brass | Reinforcement: Salpa 1.2mm | Labor: 20h",
+    "checks": {
+      "construction_type": "EXECUTIVE_BRIEFCASE"
+    }
+  },
+  {
+    "id": "SCN-10",
+    "category": "Human Escalation",
+    "model": "Custom Hybrid Bag",
+    "inbound_type": "Human Takeover Trigger",
+    "needs_attachment": false,
+    "client_turns": [
+      "Mas ini modelnya rumit sih campuran backpack sama totebag, pusing jelasin ke AI. Mau ngomong sama mas Fendy langsung dong."
+    ],
+    "followup_turns": [],
+    "post_quote_turns": [],
+    "expected_summary": "Form Factor: HYBRID_BACKPACK_TOTE | Automation State: FULL_MANUAL | Escalation Trigger: CLIENT_REQUESTED_HUMAN",
+    "checks": {
+      "automation_mode": "FULL_MANUAL",
+      "escalation_reason": "CLIENT_REQUEST"
+    }
+  }
+]

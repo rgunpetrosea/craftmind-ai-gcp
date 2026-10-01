@@ -1,11 +1,156 @@
 [
-  { "stock_id": "STK-VT-BRN-16", "name": "Veg-Tan Brown 1.6mm", "leather_type": "veg-tan", "color": "brown", "thickness_mm": 1.6, "available_sqft": 42, "price_idr_per_sqft": 85000, "supplier": "Tannery Garut", "origin": "LOCAL" },
-  { "stock_id": "STK-VT-NAT-20", "name": "Veg-Tan Natural 2.0mm", "leather_type": "veg-tan", "color": "natural", "thickness_mm": 2.0, "available_sqft": 30, "price_idr_per_sqft": 90000, "supplier": "Tannery Garut", "origin": "LOCAL" },
-  { "stock_id": "STK-VT-TAN-12", "name": "Veg-Tan Tan 1.2mm", "leather_type": "veg-tan", "color": "tan", "thickness_mm": 1.2, "available_sqft": 8, "price_idr_per_sqft": 80000, "supplier": "Tannery Garut", "origin": "LOCAL" },
-  { "stock_id": "STK-EP-BLK-12", "name": "Epsom Black 1.2mm", "leather_type": "epsom", "color": "black", "thickness_mm": 1.2, "available_sqft": 18, "price_idr_per_sqft": 210000, "supplier": "Haas Tannery (FR)", "origin": "IMPORT" },
-  { "stock_id": "STK-EP-ETP-12", "name": "Epsom Etoupe 1.2mm", "leather_type": "epsom", "color": "etoupe", "thickness_mm": 1.2, "available_sqft": 4, "price_idr_per_sqft": 215000, "supplier": "Haas Tannery (FR)", "origin": "IMPORT" },
-  { "stock_id": "STK-PU-DBR-14", "name": "Pull-Up Dark Brown 1.4mm", "leather_type": "pull-up", "color": "dark brown", "thickness_mm": 1.4, "available_sqft": 26, "price_idr_per_sqft": 95000, "supplier": "Sukaregang Leather", "origin": "LOCAL" },
-  { "stock_id": "STK-CH-COG-18", "name": "Crazy Horse Cognac 1.8mm", "leather_type": "crazy horse", "color": "cognac", "thickness_mm": 1.8, "available_sqft": 22, "price_idr_per_sqft": 100000, "supplier": "Sukaregang Leather", "origin": "LOCAL" },
-  { "stock_id": "STK-NP-BLK-10", "name": "Nappa Black 1.0mm", "leather_type": "nappa", "color": "black", "thickness_mm": 1.0, "available_sqft": 35, "price_idr_per_sqft": 120000, "supplier": "Magetan Tannery", "origin": "LOCAL" },
-  { "stock_id": "STK-SF-NVY-12", "name": "Saffiano Navy 1.2mm", "leather_type": "saffiano", "color": "navy", "thickness_mm": 1.2, "available_sqft": 12, "price_idr_per_sqft": 140000, "supplier": "Conceria Italia", "origin": "IMPORT" }
+  {
+    "stock_id": "STK-VT-BRN-16",
+    "name": "Veg-Tan Brown 1.6mm",
+    "leather_type": "veg-tan",
+    "color": "brown",
+    "thickness_mm": 1.6,
+    "available_sqft": 42,
+    "price_idr_per_sqft": 85000,
+    "supplier": "Tannery Garut",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-VT-NAT-20",
+    "name": "Veg-Tan Natural 2.0mm",
+    "leather_type": "veg-tan",
+    "color": "natural",
+    "thickness_mm": 2.0,
+    "available_sqft": 30,
+    "price_idr_per_sqft": 90000,
+    "supplier": "Tannery Garut",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-VT-TAN-12",
+    "name": "Veg-Tan Tan 1.2mm",
+    "leather_type": "veg-tan",
+    "color": "tan",
+    "thickness_mm": 1.2,
+    "available_sqft": 8,
+    "price_idr_per_sqft": 80000,
+    "supplier": "Tannery Garut",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-EP-BLK-12",
+    "name": "Epsom Black 1.2mm",
+    "leather_type": "epsom",
+    "color": "black",
+    "thickness_mm": 1.2,
+    "available_sqft": 18,
+    "price_idr_per_sqft": 210000,
+    "supplier": "Haas Tannery (FR)",
+    "origin": "IMPORT"
+  },
+  {
+    "stock_id": "STK-EP-ETP-12",
+    "name": "Epsom Etoupe 1.2mm",
+    "leather_type": "epsom",
+    "color": "etoupe",
+    "thickness_mm": 1.2,
+    "available_sqft": 4,
+    "price_idr_per_sqft": 215000,
+    "supplier": "Haas Tannery (FR)",
+    "origin": "IMPORT"
+  },
+  {
+    "stock_id": "STK-PU-DBR-14",
+    "name": "Pull-Up Dark Brown 1.4mm",
+    "leather_type": "pull-up",
+    "color": "dark brown",
+    "thickness_mm": 1.4,
+    "available_sqft": 26,
+    "price_idr_per_sqft": 95000,
+    "supplier": "Sukaregang Leather",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-CH-COG-18",
+    "name": "Crazy Horse Cognac 1.8mm",
+    "leather_type": "crazy horse",
+    "color": "cognac",
+    "thickness_mm": 1.8,
+    "available_sqft": 22,
+    "price_idr_per_sqft": 100000,
+    "supplier": "Sukaregang Leather",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-NP-BLK-10",
+    "name": "Nappa Black 1.0mm",
+    "leather_type": "nappa",
+    "color": "black",
+    "thickness_mm": 1.0,
+    "available_sqft": 35,
+    "price_idr_per_sqft": 120000,
+    "supplier": "Magetan Tannery",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-SF-NVY-12",
+    "name": "Saffiano Navy 1.2mm",
+    "leather_type": "saffiano",
+    "color": "navy",
+    "thickness_mm": 1.2,
+    "available_sqft": 12,
+    "price_idr_per_sqft": 140000,
+    "supplier": "Conceria Italia",
+    "origin": "IMPORT"
+  },
+  {
+    "stock_id": "STK-VT-NAT-12",
+    "name": "Veg-Tan Natural 1.2mm",
+    "leather_type": "veg-tan",
+    "color": "natural",
+    "thickness_mm": 1.2,
+    "available_sqft": 24,
+    "price_idr_per_sqft": 80000,
+    "supplier": "Tannery Garut",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-EP-NVY-12",
+    "name": "Epsom Navy 1.2mm",
+    "leather_type": "epsom",
+    "color": "navy",
+    "thickness_mm": 1.2,
+    "available_sqft": 14,
+    "price_idr_per_sqft": 210000,
+    "supplier": "Haas Tannery (FR)",
+    "origin": "IMPORT"
+  },
+  {
+    "stock_id": "STK-EP-RED-12",
+    "name": "Epsom Red 1.2mm",
+    "leather_type": "epsom",
+    "color": "red",
+    "thickness_mm": 1.2,
+    "available_sqft": 11,
+    "price_idr_per_sqft": 210000,
+    "supplier": "Haas Tannery (FR)",
+    "origin": "IMPORT"
+  },
+  {
+    "stock_id": "STK-PU-TSC-14",
+    "name": "Pull-Up Biru Tosca 1.4mm",
+    "leather_type": "pull-up",
+    "color": "teal",
+    "thickness_mm": 1.4,
+    "available_sqft": 9,
+    "price_idr_per_sqft": 98000,
+    "supplier": "Sukaregang Leather",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-CT-ESP-14",
+    "name": "Chrome-Tan Espresso Brown 1.4mm",
+    "leather_type": "chrome-tan",
+    "color": "espresso brown",
+    "thickness_mm": 1.4,
+    "available_sqft": 28,
+    "price_idr_per_sqft": 110000,
+    "supplier": "Magetan Tannery",
+    "origin": "LOCAL"
+  }
 ]

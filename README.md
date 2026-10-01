@@ -63,10 +63,12 @@ The in-memory store is seeded with three demo orders: one pending approval, one 
 | `GET /api/webhook/whatsapp?phone=` | Session poll (order, messages, `ai_pending`) |
 | `DELETE /api/webhook/whatsapp?phone=` | Start a fresh draft for this phone number |
 | `POST /api/ai/orchestrator` | Run all agents now `{ order_id, force? }` (`force` recomputes during a takeover without messaging the client) |
-| `POST /api/ai/mock-generator` | (Re)render the mockup |
+| `POST /api/ai/mock-generator` | (Re)render the mockup; `{ order_id, adjustment }` applies crafter feedback without touching the spec or quote |
 | `POST /api/ai/pattern-bom` | Pattern, SqFt, stock match and quote |
 | `GET /api/orders`, `GET /api/orders/:id` | Board and detail (with cost breakdown) |
 | `POST /api/orders/:id/takeover` | `{ mode: 'AI_COPILOT'\|'PARTIAL_PAUSE'\|'FULL_MANUAL', pause_minutes? }` |
+| `POST /api/orders/:id/recalculate` | `{ specifications, use_ai? }` saves crafter corrections and recomputes BOM, SqFt, labor and price |
+| `GET /api/scenarios` | Test scenarios generated from `scenarios.csv` |
 | `POST /api/orders/:id/approve` | `{ quotation_idr?, note? }` sends the formal quotation |
 | `GET/PUT /api/inventory`, `GET/PUT /api/presets` | Master data |
 
@@ -92,4 +94,4 @@ gcloud run deploy craftmind-ai --source . --region asia-southeast1 --allow-unaut
 
 `--max-instances 1 --no-cpu-throttling` is needed for the in-memory demo store and debounce timers. With `USE_FIRESTORE=true`, instance count no longer matters for state. Timers still need CPU after the response is sent, or you can move them to Cloud Tasks.
 
-See [WALKTHROUGH.md](WALKTHROUGH.md) for the build plan and the 3-minute demo script.
+See [WALKTHROUGH.md](WALKTHROUGH.md) for setup, troubleshooting, the end-to-end scenario tests and the 3-minute demo script.
