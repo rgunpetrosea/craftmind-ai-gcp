@@ -1,9 +1,9 @@
-import { applyPresetDefaults, composeReply, lastClientBurst, runIntakeAgent } from '@/lib/agents/intake-agent';
+import { composeReply, lastClientBurst, runIntakeAgent } from '@/lib/agents/intake-agent';
 import { defaultHardware, runPatternAgent } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { runVisualAgent } from '@/lib/agents/visual-agent';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
-import { filledTopicCount, normalizeSpecifications, planConversation } from '@/lib/spec/catalog';
+import { filledTopicCount, finalizeSpecifications, normalizeSpecifications, planConversation, topicKey } from '@/lib/spec/catalog';
 import { specCardText } from '@/lib/spec/describe';
 import type { IntakeProgress, OrchestratorResult, OrderPayload } from '@/lib/types';
 import { nowIso } from '@/lib/utils/format';
@@ -101,19 +101,21 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     store.getConversation(order.client_info.phone_number),
   ]);
   const known = normalizeSpecifications(order.specifications);
-  const progress: IntakeProgress = order.intake ?? { asked_topics: [], last_asked: [], question_rounds: 0 };
+  const stored: IntakeProgress = order.intake ?? { asked_topics: [], last_asked: [], deferred_topics: [], question_rounds: 0 };
   const burst = lastClientBurst(messages);
-  const processed_message_id = burst.at(-1)?.id ?? progress.processed_message_id;
+  const processed_message_id = burst.at(-1)?.id ?? stored.processed_message_id;
 
   // --- Agent 1: vision + structured intake -----------------------------------
-  const intake = await runIntakeAgent({ messages, known, category: order.craft_category, progress });
+  const intake = await runIntakeAgent({ messages, known, progress: stored });
+  const spec0 = intake.specifications;
+  const progress: IntakeProgress = { ...stored, deferred_topics: [...new Set([...stored.deferred_topics, ...intake.deferred_topics])] };
   // Once a spec card has been sent, later messages are corrections: re-quote instead of re-opening optional questions.
   const wasLocked = order.session_state === 'PENDING_CRAFTER_APPROVAL';
   const clientFinished = intake.client_finished || wasLocked;
-  const plan = planConversation(intake.specifications, progress, clientFinished);
+  const plan = planConversation(spec0, progress, clientFinished);
 
   // --- Confusion rule: no checklist progress while the AI is still asking ----
-  const stalled = !plan.ready && !clientFinished && filledTopicCount(intake.specifications) <= filledTopicCount(known);
+  const stalled = !plan.ready && !clientFinished && filledTopicCount(spec0, progress) <= filledTopicCount(known, stored);
   if (conversation) {
     conversation.confusion_strikes = stalled ? conversation.confusion_strikes + 1 : 0;
     conversation.updated_at = nowIso();
@@ -122,8 +124,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
 
   if (conversation && conversation.confusion_strikes >= CONFUSION_STRIKE_LIMIT) {
     const latest = await commit(orderId, {
-      craft_category: intake.craft_category,
-      specifications: intake.specifications,
+      craft_category: spec0.category,
+      specifications: spec0,
       intake: { ...progress, vision_notes: intake.vision_notes, processed_message_id },
     });
     if (!isAiBlocked(latest)) {
@@ -138,9 +140,11 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
 
   // --- Still gathering: ask the next one or two things, naturally -------------
   if (!plan.ready) {
+    const asked = plan.ask.map((t) => topicKey(spec0, t));
     const nextProgress: IntakeProgress = {
-      asked_topics: [...new Set([...progress.asked_topics, ...plan.ask])],
-      last_asked: plan.ask,
+      ...progress,
+      asked_topics: [...new Set([...progress.asked_topics, ...asked])],
+      last_asked: asked,
       question_rounds: progress.question_rounds + 1,
       vision_notes: intake.vision_notes,
       processed_message_id,
@@ -148,14 +152,14 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     const reply = await composeReply({
       clientName: order.client_info.client_name_wa,
       plan,
-      spec: intake.specifications,
+      spec: spec0,
       messages,
       visionNotes: intake.vision_notes,
       isFirstTurn: !messages.some((m) => m.sender === 'AI'),
     });
     const latest = await commit(orderId, {
-      craft_category: intake.craft_category,
-      specifications: intake.specifications,
+      craft_category: spec0.category,
+      specifications: spec0,
       session_state: 'REQUIREMENT_GATHERING',
       intake: nextProgress,
     });
@@ -164,13 +168,13 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   }
 
   // --- Spec complete → lock it, then pattern, mockup, sourcing, quote ---------
-  const preset = await getPreset(intake.craft_category);
-  const spec = applyPresetDefaults(intake.specifications, preset);
-  const specChanged = JSON.stringify(spec) !== JSON.stringify(known) || intake.craft_category !== order.craft_category;
+  const preset = await getPreset(spec0.category);
+  const spec = finalizeSpecifications(spec0, preset.defaults);
+  const specChanged = JSON.stringify(spec) !== JSON.stringify(known);
   const needsBuild = specChanged || order.pattern_and_bom.components_breakdown.length === 0;
 
   let patch: Partial<OrchestratorFields> = {
-    craft_category: intake.craft_category,
+    craft_category: spec.category,
     specifications: spec,
     session_state: 'PENDING_CRAFTER_APPROVAL',
     intake: { ...progress, last_asked: [], vision_notes: intake.vision_notes, processed_message_id },
@@ -181,7 +185,6 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       runPatternAgent(spec, preset),
       runVisualAgent({
         orderId,
-        category: intake.craft_category,
         spec,
         hardware: defaultHardware(spec),
         sketchUrl: order.media_assets.original_sketch_url,

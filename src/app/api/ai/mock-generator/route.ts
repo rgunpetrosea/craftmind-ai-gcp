@@ -3,19 +3,18 @@ import { defaultHardware } from '@/lib/agents/pattern-agent';
 import { runVisualAgent } from '@/lib/agents/visual-agent';
 import { getStore } from '@/lib/gcp/firestore';
 import { normalizeSpecifications } from '@/lib/spec/catalog';
-import type { CraftCategory, Specifications } from '@/lib/types';
+import type { Specifications } from '@/lib/types';
 
 /**
  * Generate or re-generate a studio mockup.
  * Body: { order_id, adjustment? } re-renders and stores on the order. `adjustment` is the crafter's visual feedback
  *       ("flat card sleeve, show open card slots from the front"); the current mockup is passed to the image model as a
  *       reference and only `media_assets` changes — the specification, BOM and quote are left untouched.
- *   or  { craft_category, specifications, sketch_url? } for a one-off preview that is not stored.
+ *   or  { specifications, sketch_url? } for a one-off preview that is not stored.
  */
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as {
     order_id?: string;
-    craft_category?: CraftCategory;
     specifications?: Specifications;
     sketch_url?: string;
     adjustment?: string;
@@ -24,14 +23,12 @@ export async function POST(request: NextRequest) {
   const order = body.order_id ? await store.getOrder(body.order_id) : null;
   if (body.order_id && !order) return Response.json({ error: 'Order not found' }, { status: 404 });
 
-  const category = order?.craft_category ?? body.craft_category;
   const spec = order?.specifications ?? body.specifications;
-  if (!category || !spec) return Response.json({ error: 'order_id or craft_category + specifications required' }, { status: 400 });
+  if (!spec) return Response.json({ error: 'order_id or specifications required' }, { status: 400 });
 
   const adjustment = body.adjustment?.trim() || undefined;
   const mockup = await runVisualAgent({
     orderId: order?.order_id ?? 'preview',
-    category,
     spec: normalizeSpecifications(spec),
     hardware: order?.pattern_and_bom.hardware_list.length ? order.pattern_and_bom.hardware_list : defaultHardware(normalizeSpecifications(spec)),
     sketchUrl: order?.media_assets.original_sketch_url ?? body.sketch_url,

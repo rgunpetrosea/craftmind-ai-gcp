@@ -1,12 +1,12 @@
 import type { PatternAndBom } from '@/lib/types';
-import { CM2_PER_SQFT, componentAreaCm2, netExteriorAreaCm2, NON_EXTERIOR_PART } from '@/lib/utils/geometry';
+import { CM2_PER_SQFT, componentAreaCm2, netPrimaryAreaCm2, SECONDARY_PART } from '@/lib/utils/geometry';
 
 /** 2D pattern component breakdown with per-piece area and the SqFt total. */
-export function BomTable({ bom, wastagePct }: { bom: PatternAndBom; wastagePct?: number }) {
+export function BomTable({ bom, wastagePct, materialLabel = 'Leather' }: { bom: PatternAndBom; wastagePct?: number; materialLabel?: string }) {
   if (!bom.components_breakdown.length) {
     return <p className="p-4 text-sm text-stone-500">Pattern breakdown is generated once the specification is complete.</p>;
   }
-  const net = netExteriorAreaCm2(bom.components_breakdown);
+  const net = netPrimaryAreaCm2(bom.components_breakdown);
 
   return (
     <div className="overflow-x-auto">
@@ -21,7 +21,7 @@ export function BomTable({ bom, wastagePct }: { bom: PatternAndBom; wastagePct?:
         </thead>
         <tbody className="divide-y divide-stone-100">
           {bom.components_breakdown.map((c, i) => {
-            const secondary = NON_EXTERIOR_PART.test(c.part_name);
+            const secondary = SECONDARY_PART.test(c.part_name);
             return (
               <tr key={`${c.part_name}-${i}`} className={secondary ? 'text-stone-400' : 'text-stone-800'}>
                 <td className="px-4 py-1.5">
@@ -38,10 +38,10 @@ export function BomTable({ bom, wastagePct }: { bom: PatternAndBom; wastagePct?:
         <tfoot className="border-t-2 border-stone-200 text-stone-800">
           <tr>
             <td colSpan={3} className="px-4 py-2 text-xs text-stone-500">
-              Net exterior leather {Math.round(net).toLocaleString('id-ID')} cm² ÷ {CM2_PER_SQFT} cm²/sqft
+              Net {materialLabel.toLowerCase()} {Math.round(net).toLocaleString('id-ID')} cm² ÷ {CM2_PER_SQFT} cm²/sqft
               {wastagePct !== undefined && ` × ${1 + wastagePct} wastage`}
             </td>
-            <td className="px-4 py-2 text-right text-base font-bold text-leather-700 tabular-nums">{bom.estimated_leather_sqft} sqft</td>
+            <td className="px-4 py-2 text-right text-base font-bold text-leather-700 tabular-nums">{bom.estimated_material_sqft} sqft</td>
           </tr>
         </tfoot>
       </table>

@@ -5,7 +5,11 @@
 export type SessionState = 'IDLE' | 'REQUIREMENT_GATHERING' | 'PENDING_CRAFTER_APPROVAL' | 'APPROVED';
 export type AutomationMode = 'AI_COPILOT' | 'PARTIAL_PAUSE' | 'FULL_MANUAL';
 export type EscalationReason = 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OVERRIDE';
-export type CraftCategory = 'bespoke_bag' | 'bespoke_wallet' | 'bespoke_shoes';
+/**
+ * Isolated craft categories. Each has its own attribute schema; attributes are never shared or mixed across categories.
+ * Field definitions (labels, UI, Gemini schema, parsers) live in `src/lib/spec/categories/*`.
+ */
+export type CraftCategory = 'SMALL_GOODS' | 'BAG' | 'FOOTWEAR' | 'FURNITURE' | 'CUSTOM_GENERIC';
 export type SourcingStatus = 'IN_STOCK' | 'SPECIAL_SOURCING_NEEDED';
 
 export interface Dimensions {
@@ -14,20 +18,22 @@ export interface Dimensions {
   height: number;
 }
 
-/**
- * Precise form factor. Distinguishes e.g. a FLAT_CARD_HOLDER (single flat panel, no fold)
- * from BIFOLD / TRIFOLD / ACCORDION wallets. Definitions live in `lib/spec/catalog.ts`.
- */
-export type ConstructionType =
-  | 'UNSPECIFIED'
-  // card holders & wallets
+// ---------------------------------------------------------------------------
+// Form factors per category
+// ---------------------------------------------------------------------------
+
+export type SmallGoodsConstruction =
   | 'FLAT_CARD_HOLDER'
   | 'PATTERNED_CARD_HOLDER'
   | 'BIFOLD_WALLET'
   | 'TRIFOLD_WALLET'
   | 'ACCORDION_WALLET'
   | 'ZIP_AROUND_LONG_WALLET'
-  // bags
+  | 'PASSPORT_COVER'
+  | 'KEY_POUCH'
+  | 'OTHER_SMALL_GOODS';
+
+export type BagConstruction =
   | 'SLING_BAG'
   | 'CROSSBODY_CAMERA_BAG'
   | 'MESSENGER_BAG'
@@ -38,81 +44,198 @@ export type ConstructionType =
   | 'PADEL_RACKET_BAG'
   | 'HYBRID_BACKPACK_TOTE'
   | 'CLUTCH'
-  // shoes
-  | 'DERBY_SHOES'
-  | 'OXFORD_SHOES'
-  | 'LOAFERS'
-  | 'CHELSEA_BOOTS'
-  // anything else the crafter must interpret manually
-  | 'OTHER_CUSTOM';
+  | 'OTHER_BAG';
 
-/** Where the cards / cash / zips go. 0 / false = not requested. */
-export interface PocketLayout {
-  /** Card slots on the front face (flat card holders) or inside-left (wallets). */
-  front_slots: number;
-  /** Card slots on the back face (flat card holders) or inside-right (wallets). */
-  back_slots: number;
-  /** Central pocket between front and back slots (cash / folded notes). */
-  central_pockets: number;
-  /** Full-length cash compartments (bifold / long wallets). */
-  cash_compartments: number;
-  /** Transparent ID / photo window. */
-  id_window: boolean;
-  /** Zippered coin pocket. */
-  coin_zip_pocket: boolean;
-  /** Zippered pockets inside a bag. */
-  interior_zip_pockets: number;
-  /** Open slip pockets on the outside of a bag (front / back / side). */
-  exterior_pockets: number;
+export type FootwearConstruction = 'DERBY_SHOES' | 'OXFORD_SHOES' | 'LOAFERS' | 'CHELSEA_BOOTS' | 'SANDALS' | 'OTHER_FOOTWEAR';
+
+export type FurnitureConstruction =
+  | 'DINING_TABLE'
+  | 'COFFEE_TABLE'
+  | 'DESK'
+  | 'CHAIR'
+  | 'STOOL'
+  | 'BENCH'
+  | 'SHELF'
+  | 'CABINET'
+  | 'BED_FRAME'
+  | 'OTHER_FURNITURE';
+
+export type CustomGenericConstruction = 'APPAREL' | 'JEWELRY' | 'SPORTS_GEAR' | 'HOME_DECOR' | 'OTHER_CUSTOM';
+
+export interface ConstructionByCategory {
+  SMALL_GOODS: SmallGoodsConstruction;
+  BAG: BagConstruction;
+  FOOTWEAR: FootwearConstruction;
+  FURNITURE: FurnitureConstruction;
+  CUSTOM_GENERIC: CustomGenericConstruction;
 }
 
-export type EdgeTreatment = 'UNSPECIFIED' | 'BURNISHED' | 'EDGE_PAINT' | 'RAW' | 'TURNED_EDGE';
+/** 'UNSPECIFIED' = not identified yet (the order is still unclassified). */
+export type ConstructionType = 'UNSPECIFIED' | ConstructionByCategory[CraftCategory];
 
-/** Leather edge, surface and stitching attributes. Empty string / UNSPECIFIED = not discussed yet. */
-export interface FinishDetails {
-  edge_treatment: EdgeTreatment;
-  /** Surface character, e.g. "matte", "pull-up", "saffiano texture". */
-  surface_finish: string;
-  /** Color / dye finish, e.g. "biru tosca", "black". */
-  color_finish: string;
-  thread_color: string;
-  /** e.g. "linen", "waxed polyester". */
-  thread_material: string;
-  /** e.g. "diamond stitch", "saddle stitch". */
-  stitch_pattern: string;
-  /** e.g. "YKK Excella Gold #5". */
-  zipper: string;
-  /** Strap choice for bags, e.g. "detachable full-leather strap". */
-  strap: string;
-  /** Closures / buckles / reinforcement, e.g. "solid brass buckles, salpa 1.2mm". */
-  hardware_notes: string;
-}
+// ---------------------------------------------------------------------------
+// Shared enums (each category opts in to the ones it uses)
+// 'UNSPECIFIED' is the unset value of every enum.
+// ---------------------------------------------------------------------------
 
-/** UNSPECIFIED = never discussed; NONE = client declined. */
-export type CustomizationType = 'UNSPECIFIED' | 'NONE' | 'EMBOSS_INITIALS' | 'EMBOSS_LOGO' | 'LASER_ENGRAVING';
+export type EmbossingType = 'UNSPECIFIED' | 'NONE' | 'EMBOSS_INITIALS' | 'EMBOSS_LOGO' | 'LASER_ENGRAVING';
+export type LeatherEdgeFinish = 'UNSPECIFIED' | 'BURNISHED' | 'EDGE_PAINT' | 'RAW' | 'TURNED_EDGE';
 
-export interface Customization {
-  type: CustomizationType;
-  /** Text / artwork, e.g. "R.W" or "batik mega mendung". */
-  detail: string;
-  /** e.g. "bottom-right corner, outside". */
-  placement: string;
-}
+// ---------------------------------------------------------------------------
+// Category attribute schemas. Unset values: '' / 0 / false / 'UNSPECIFIED' / {0,0,0}.
+// ---------------------------------------------------------------------------
 
-export interface Specifications {
-  silhouette: string;
-  target_capacity: string;
+/** Wallets, card holders and other small leather goods. No straps, laptop size or bag hardware. */
+export interface SmallGoodsAttributes {
   dimensions_cm: Dimensions;
   exterior_leather: string;
-  lining_material: string;
-  structure_temper: string;
+  color: string;
+  front_slots: number;
+  back_slots: number;
+  central_pockets: number;
+  cash_compartments: number;
+  id_window: boolean;
+  coin_zip_pocket: boolean;
+  /** Only relevant for zip-around wallets / coin zip pockets. */
+  zipper: string;
+  lining: string;
+  edge_finish: LeatherEdgeFinish;
   stitching_method: string;
-  edge_finish: string;
-  construction_type: ConstructionType;
-  pocket_layout: PocketLayout;
-  finish: FinishDetails;
-  customization: Customization;
+  stitch_pattern: string;
+  thread_material: string;
+  thread_color: string;
+  embossing_type: EmbossingType;
+  embossing_text: string;
+  embossing_placement: string;
 }
+
+export type BagStructure = 'UNSPECIFIED' | 'RIGID' | 'SEMI_STRUCTURED' | 'SOFT';
+export type BagClosure = 'UNSPECIFIED' | 'MAGNETIC_FLAP' | 'TURN_LOCK_FLAP' | 'BUCKLE_FLAP' | 'ZIPPER' | 'DRAWSTRING' | 'OPEN_TOP';
+export type BagStrap =
+  | 'UNSPECIFIED'
+  | 'NONE'
+  | 'TOP_HANDLE_ONLY'
+  | 'FIXED_LEATHER'
+  | 'DETACHABLE_LEATHER'
+  | 'WEBBING'
+  | 'BACKPACK_STRAPS'
+  | 'CONVERTIBLE';
+
+/** Bags of every kind. No card slots. */
+export interface BagAttributes {
+  dimensions_cm: Dimensions;
+  /** Depth of the side gusset when it differs from the body width. */
+  gusset_depth_cm: number;
+  laptop_size_inch: number;
+  target_capacity: string;
+  exterior_leather: string;
+  color: string;
+  structure: BagStructure;
+  main_closure: BagClosure;
+  strap_type: BagStrap;
+  hardware: string;
+  interior_zip_pockets: number;
+  exterior_pockets: number;
+  lining: string;
+  padding: string;
+  edge_finish: LeatherEdgeFinish;
+  stitching_method: string;
+  thread_color: string;
+  embossing_type: EmbossingType;
+  embossing_text: string;
+  embossing_placement: string;
+}
+
+export type LastShape = 'UNSPECIFIED' | 'ROUND' | 'ALMOND' | 'CHISEL' | 'SQUARE' | 'POINTED';
+export type WidthFit = 'UNSPECIFIED' | 'NARROW' | 'REGULAR' | 'WIDE';
+export type OutsoleType = 'UNSPECIFIED' | 'LEATHER' | 'RUBBER' | 'DAINITE' | 'CREPE' | 'COMMANDO_LUG';
+export type WeltMethod = 'UNSPECIFIED' | 'GOODYEAR' | 'BLAKE' | 'STITCHDOWN' | 'CEMENTED';
+
+export interface FootwearAttributes {
+  eu_size: number;
+  width_fit: WidthFit;
+  last_shape: LastShape;
+  upper_material: string;
+  color: string;
+  toe_style: string;
+  lining: string;
+  outsole_type: OutsoleType;
+  welt_method: WeltMethod;
+  heel_height_cm: number;
+}
+
+export type FurnitureFinish = 'UNSPECIFIED' | 'NATURAL_OIL' | 'WAX' | 'WATER_BASED_LACQUER' | 'PU_VARNISH' | 'DUCO_PAINT' | 'POWDER_COAT';
+export type JoineryType =
+  | 'UNSPECIFIED'
+  | 'MORTISE_TENON'
+  | 'DOVETAIL'
+  | 'DOWEL'
+  | 'FINGER_JOINT'
+  | 'POCKET_SCREW'
+  | 'KNOCK_DOWN_FITTINGS'
+  | 'WELDED';
+export type FurnitureAssembly = 'UNSPECIFIED' | 'ASSEMBLED' | 'KNOCK_DOWN';
+
+export interface FurnitureAttributes {
+  dimensions_cm: Dimensions;
+  /** Wood or metal species/type, e.g. "Jati (teak) grade A", "besi hollow". */
+  primary_material: string;
+  secondary_material: string;
+  finish_coating: FurnitureFinish;
+  color_stain: string;
+  joinery_type: JoineryType;
+  upholstery: string;
+  seating_capacity: number;
+  assembly: FurnitureAssembly;
+}
+
+/** Fallback for any other bespoke craft (apparel, jewelry, sports gear...): a few universal fields + custom fields. */
+export interface CustomGenericAttributes {
+  dimensions_cm: Dimensions;
+  primary_material: string;
+  color: string;
+  intended_use: string;
+  quantity: number;
+}
+
+export interface AttributesByCategory {
+  SMALL_GOODS: SmallGoodsAttributes;
+  BAG: BagAttributes;
+  FOOTWEAR: FootwearAttributes;
+  FURNITURE: FurnitureAttributes;
+  CUSTOM_GENERIC: CustomGenericAttributes;
+}
+
+export type AttributeValue = string | number | boolean | Dimensions;
+
+/** Free key-value detail for requests no schema field covers (added by the AI or by the crafter). */
+export interface CustomField {
+  id: string;
+  label: string;
+  value: string;
+  /** Optional price impact the crafter assigns; added to the quotation. */
+  surcharge_idr: number;
+  source: 'AI' | 'CRAFTER';
+}
+
+interface SpecOf<C extends CraftCategory> {
+  category: C;
+  construction_type: ConstructionByCategory[C] | 'UNSPECIFIED';
+  /** Client-facing product name, e.g. "Dompet kartu pipih" or "Meja makan 6 kursi". */
+  model_name: string;
+  notes: string;
+  attributes: AttributesByCategory[C];
+  custom_fields: CustomField[];
+}
+
+export type SmallGoodsSpec = SpecOf<'SMALL_GOODS'>;
+export type BagSpec = SpecOf<'BAG'>;
+export type FootwearSpec = SpecOf<'FOOTWEAR'>;
+export type FurnitureSpec = SpecOf<'FURNITURE'>;
+export type CustomGenericSpec = SpecOf<'CUSTOM_GENERIC'>;
+
+/** Discriminated by `category`; narrow with `spec.category === 'BAG'` before reading typed attributes. */
+export type Specifications = SmallGoodsSpec | BagSpec | FootwearSpec | FurnitureSpec | CustomGenericSpec;
 
 export interface MaterialSourcing {
   status: SourcingStatus;
@@ -129,7 +252,8 @@ export interface BomComponent {
 
 export interface PatternAndBom {
   components_breakdown: BomComponent[];
-  estimated_leather_sqft: number;
+  /** Primary material incl. wastage: leather hide sqft, or wood board-surface sqft for furniture. */
+  estimated_material_sqft: number;
   hardware_list: string[];
   estimated_labor_hours: number;
   suggested_quotation_idr: number;
@@ -146,12 +270,14 @@ export interface MediaAssets {
   mockup_feedback?: string[];
 }
 
-/** Multi-turn requirement-gathering progress, owned by the orchestrator. */
+/** Multi-turn requirement-gathering progress, owned by the orchestrator. Topic keys are "<CATEGORY>:<topic id>". */
 export interface IntakeProgress {
-  /** Checklist topics the AI has already asked about (each optional topic is asked at most once). */
+  /** Topics the AI has already asked about (each optional topic is asked at most once). */
   asked_topics: string[];
   /** Topics in the AI's most recent question bubble; used to interpret short answers like "full kulit mas". */
   last_asked: string[];
+  /** Topics the client left to the workshop ("terserah"); filled from presets when the spec is locked. */
+  deferred_topics: string[];
   /** What the vision model saw in the client's sketch / photo. */
   vision_notes?: string;
   /** Last client message already processed (prevents re-applying "+3 cm" style edits). */
@@ -238,7 +364,8 @@ export type WebhookAction =
 export interface InventoryItem {
   stock_id: string;
   name: string;
-  leather_type: string;
+  /** Leather, wood or metal type, e.g. "veg-tan", "teak", "iron". */
+  material_type: string;
   color: string;
   thickness_mm: number;
   available_sqft: number;
@@ -255,9 +382,10 @@ export interface CategoryPreset {
   hardware_cost_idr_per_item: number;
   wastage_pct: number;
   margin_pct: number;
-  /** Price assumed for leather that must be special-sourced. */
+  /** Price assumed for primary material that must be special-sourced. */
   sourcing_price_idr_per_sqft: number;
-  defaults: Pick<Specifications, 'lining_material' | 'structure_temper' | 'stitching_method' | 'edge_finish'>;
+  /** Workshop defaults applied when the client leaves a field open ("terserah"), keyed by attribute name of this category. */
+  defaults: Partial<Record<string, string | number | boolean>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,10 +393,11 @@ export interface CategoryPreset {
 // ---------------------------------------------------------------------------
 
 export interface IntakeResult {
-  craft_category: CraftCategory;
   specifications: Specifications;
   /** True when the client signalled they have nothing more to add ("itu saja kak"). */
   client_finished: boolean;
+  /** Topic keys the client deferred to the workshop in this burst. */
+  deferred_topics: string[];
   vision_notes?: string;
 }
 

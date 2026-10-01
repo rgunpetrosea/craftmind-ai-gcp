@@ -98,36 +98,15 @@ export interface OrderPayload {
   automation_mode: 'AI_COPILOT' | 'PARTIAL_PAUSE' | 'FULL_MANUAL';
   paused_until?: string; // ISO Timestamp for Partial Takeover
   escalation_reason?: 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OVERRIDE';
-  craft_category: 'bespoke_bag' | 'bespoke_wallet' | 'bespoke_shoes';
+  craft_category: 'SMALL_GOODS' | 'BAG' | 'FOOTWEAR' | 'FURNITURE' | 'CUSTOM_GENERIC'; // mirrors specifications.category
+  // Discriminated union: SmallGoodsSpec | BagSpec | FootwearSpec | FurnitureSpec | CustomGenericSpec
   specifications: {
-    silhouette: string;
-    target_capacity: string;
-    dimensions_cm: { length: number; width: number; height: number };
-    exterior_leather: string;
-    lining_material: string;
-    structure_temper: string;
-    stitching_method: string;
-    edge_finish: string;
-    // precise form factor — see CONSTRUCTIONS in src/lib/spec/catalog.ts
-    construction_type: 'UNSPECIFIED' | 'FLAT_CARD_HOLDER' | 'PATTERNED_CARD_HOLDER' | 'BIFOLD_WALLET' | 'TRIFOLD_WALLET'
-      | 'ACCORDION_WALLET' | 'ZIP_AROUND_LONG_WALLET' | 'SLING_BAG' | 'CROSSBODY_CAMERA_BAG' | 'MESSENGER_BAG'
-      | 'SLOUCHY_TOTE' | 'STRUCTURED_TOTE' | 'BACKPACK' | 'EXECUTIVE_BRIEFCASE' | 'PADEL_RACKET_BAG'
-      | 'HYBRID_BACKPACK_TOTE' | 'CLUTCH' | 'DERBY_SHOES' | 'OXFORD_SHOES' | 'LOAFERS' | 'CHELSEA_BOOTS' | 'OTHER_CUSTOM';
-    pocket_layout: {
-      front_slots: number; back_slots: number; central_pockets: number; cash_compartments: number;
-      id_window: boolean; coin_zip_pocket: boolean; interior_zip_pockets: number; exterior_pockets: number;
-    };
-    finish: {
-      edge_treatment: 'UNSPECIFIED' | 'BURNISHED' | 'EDGE_PAINT' | 'RAW' | 'TURNED_EDGE';
-      surface_finish: string; color_finish: string;
-      thread_color: string; thread_material: string; stitch_pattern: string;
-      zipper: string; strap: string; hardware_notes: string;
-    };
-    customization: {
-      type: 'UNSPECIFIED' | 'NONE' | 'EMBOSS_INITIALS' | 'EMBOSS_LOGO' | 'LASER_ENGRAVING';
-      detail: string;     // e.g. "R.W", "batik mega mendung"
-      placement: string;  // e.g. "pojok kanan bawah"
-    };
+    category: OrderPayload['craft_category'];
+    construction_type: string;          // form factor of THIS category, or 'UNSPECIFIED' (unclassified)
+    model_name: string;
+    notes: string;
+    attributes: AttributesByCategory[category]; // isolated per category, see src/lib/types/index.ts
+    custom_fields: Array<{ id: string; label: string; value: string; surcharge_idr: number; source: 'AI' | 'CRAFTER' }>;
   };
   material_sourcing: {
     status: 'IN_STOCK' | 'SPECIAL_SOURCING_NEEDED';
@@ -141,7 +120,7 @@ export interface OrderPayload {
       qty: number;
       dimensions_cm: string;
     }>;
-    estimated_leather_sqft: number;
+    estimated_material_sqft: number; // leather hide or wood board surface, incl. wastage
     hardware_list: string[];
     estimated_labor_hours: number;
     suggested_quotation_idr: number;
@@ -162,8 +141,25 @@ export interface OrderPayload {
 }
 ```
 
-Unset values are `""` / `0` / `false` / `'UNSPECIFIED'` — never `undefined`. Orders written before a schema change are
-read through `normalizeSpecifications()`; always use it before touching nested spec fields.
+Unset values are `""` / `0` / `false` / `'UNSPECIFIED'`. Stored orders pass through `normalizeOrder()` (legacy flat
+specs are migrated); always use `normalizeSpecifications()` before reading attributes.
+
+## Category-Aware Specification Architecture (v3)
+- Categories are ISOLATED: never add an attribute to one category for another's sake, never share stored values.
+  * SMALL_GOODS: card slots (front/back/central), cash compartments, ID window, coin zip, zipper (zip only), lining, edge, stitching, embossing.
+  * BAG: dimensions, gusset depth, laptop size, capacity, structure, main closure, strap type, hardware, pockets, lining, padding, edge, embossing.
+  * FOOTWEAR: EU size, width fit, last shape, upper material, toe style, lining, outsole, welt method, heel height.
+  * FURNITURE: L x W x H, wood/metal, secondary material, finish/coating, color/stain, joinery, upholstery, seats, assembly.
+  * CUSTOM_GENERIC: dimensions, material, color, intended use, quantity + free `custom_fields`.
+- Single source of truth: `src/lib/spec/categories/*.ts`, typed `FieldMap<Attributes>` (compile error if a field is missing or
+  mistyped). From it are generated: the dashboard form (`spec-editor.tsx`), Gemini schemas (`spec/gemini-schema.ts`), offline
+  parsers (`parse`), the question checklist (`topics`), the spec card (`spec/describe.ts`) and the mockup prompt.
+- Adding a category: add a type + attributes interface in `types/index.ts`, a `categories/<name>.ts` schema, register it in
+  `CATEGORY_SCHEMAS` (`spec/catalog.ts`), add a preset in `data/category-presets.json` and a template in `pattern-agent.ts`.
+- Intake is two-stage: classify (category + form factor, only while unknown or on a product switch), then extract with
+  `extractionSchema(category)` so Gemini can only return that category's attributes; unmatched requests → `custom_fields`.
+- Dashboard form shows only relevant fields that are filled or required; the rest sit under "+ Add field";
+  "+ Add Custom Field" adds key/value rows with an optional surcharge that flows into the quotation.
 
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.

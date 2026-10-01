@@ -6,9 +6,9 @@ import {
   mediaUrlToPart,
 } from '@/lib/gcp/gemini';
 import { storeMedia } from '@/lib/gcp/gcs';
-import { getConstruction } from '@/lib/spec/catalog';
-import { describeCustomization } from '@/lib/spec/describe';
-import type { CraftCategory, MockupEngine, Specifications } from '@/lib/types';
+import { constructionDef, schemaOf } from '@/lib/spec/catalog';
+import { specLines } from '@/lib/spec/describe';
+import type { ConstructionType, CraftCategory, MockupEngine, Specifications } from '@/lib/types';
 import { renderConceptSvg } from '@/lib/utils/svg';
 
 /**
@@ -16,15 +16,10 @@ import { renderConceptSvg } from '@/lib/utils/svg';
  *   Gemini multimodal image model: conditioned on the client sketch and, for crafter feedback, on the previous render.
  *   Imagen (Vertex AI only): text-to-image.
  *   Otherwise a deterministic SVG concept so the demo never shows a blank (it cannot apply free-text feedback).
+ * The prompt lists only the active category's filled attributes, so a table never inherits wallet wording.
  */
 
-const CATEGORY_NOUN: Record<CraftCategory, string> = {
-  bespoke_bag: 'leather bag',
-  bespoke_wallet: 'leather wallet',
-  bespoke_shoes: 'pair of leather shoes',
-};
-
-const SHAPE_HINT: Partial<Record<Specifications['construction_type'], string>> = {
+const SHAPE_HINT: Partial<Record<ConstructionType, string>> = {
   FLAT_CARD_HOLDER: 'a SINGLE FLAT card sleeve, not folded, card slots visible on the front face, cards peeking out of the top edge',
   PATTERNED_CARD_HOLDER: 'a single flat card holder with a decorative engraved/patterned outer face, not folded',
   BIFOLD_WALLET: 'a bifold wallet shown slightly open to reveal card slots and the cash compartment',
@@ -33,34 +28,31 @@ const SHAPE_HINT: Partial<Record<Specifications['construction_type'], string>> =
   ZIP_AROUND_LONG_WALLET: 'a long zip-around wallet, zipper running around three sides',
 };
 
-export function buildMockupPrompt(category: CraftCategory, spec: Specifications, hardware: string[] = []): string {
-  const d = spec.dimensions_cm;
-  const def = getConstruction(spec.construction_type);
-  const p = spec.pocket_layout;
-  const slots = p.front_slots + p.back_slots;
-  const thread = [spec.finish.thread_material, spec.finish.thread_color, spec.finish.stitch_pattern].filter(Boolean).join(' ');
+const SCENE: Record<CraftCategory, string> = {
+  SMALL_GOODS: 'soft-box lighting, warm neutral seamless backdrop, three-quarter angle, 85mm macro lens',
+  BAG: 'soft-box lighting, warm neutral seamless backdrop, three-quarter angle, 85mm lens',
+  FOOTWEAR: 'pair of shoes, side and three-quarter view, soft-box lighting, neutral backdrop, 85mm lens',
+  FURNITURE: 'interior catalogue photo, natural window light, minimal room, eye-level three-quarter view, 35mm lens',
+  CUSTOM_GENERIC: 'soft-box lighting, neutral seamless backdrop, three-quarter angle',
+};
+
+export function buildMockupPrompt(spec: Specifications, hardware: string[] = []): string {
+  const schema = schemaOf(spec.category);
+  const label = constructionDef(spec.construction_type)?.label ?? schema.noun;
+  const subject = SHAPE_HINT[spec.construction_type] ?? `a handcrafted ${label.toLowerCase()} (${schema.noun})`;
+  const details = specLines(spec, 'en').map((l) => l.replace(/^• /, ''));
   return [
-    `Studio product photograph of ${SHAPE_HINT[spec.construction_type] ?? `a handcrafted ${def.label.toLowerCase()} (${CATEGORY_NOUN[category]})`}`,
-    spec.exterior_leather && `made from ${spec.exterior_leather} leather${spec.finish.surface_finish ? `, ${spec.finish.surface_finish} surface` : ''}`,
-    d.length && `approx. ${d.length} x ${d.width || '?'} x ${d.height} cm`,
-    slots > 0 && `${slots} visible card slots`,
-    p.central_pockets > 0 && 'a central pocket for folded cash',
-    p.coin_zip_pocket && 'a zippered coin pocket',
-    spec.structure_temper && `${spec.structure_temper.toLowerCase()} body`,
-    (spec.stitching_method || thread) && `visible ${[spec.stitching_method, thread].filter(Boolean).join(', ').toLowerCase()} stitching`,
-    spec.edge_finish && spec.edge_finish.toLowerCase(),
-    spec.customization.type !== 'UNSPECIFIED' && spec.customization.type !== 'NONE' && `customization: ${describeCustomization(spec)}`,
-    spec.finish.zipper && `zipper: ${spec.finish.zipper}`,
-    hardware.length && `hardware: ${hardware.slice(0, 3).join(', ')}`,
-    'soft-box lighting, warm neutral seamless backdrop, three-quarter angle, 85mm lens, photorealistic, no text, no logo watermark',
+    `Studio product photograph of ${subject}`,
+    ...details,
+    hardware.length ? `hardware: ${hardware.slice(0, 3).join(', ')}` : '',
+    `${SCENE[spec.category]}, photorealistic, no text, no logo watermark`,
   ]
     .filter(Boolean)
-    .join(', ');
+    .join('; ');
 }
 
 export async function runVisualAgent(input: {
   orderId: string;
-  category: CraftCategory;
   spec: Specifications;
   hardware?: string[];
   sketchUrl?: string;
@@ -69,7 +61,7 @@ export async function runVisualAgent(input: {
   /** Current mockup, used as a reference so feedback edits it instead of starting over. */
   previousMockupUrl?: string;
 }): Promise<{ url: string; engine: MockupEngine; prompt: string; mime_type: string }> {
-  const base = buildMockupPrompt(input.category, input.spec, input.hardware);
+  const base = buildMockupPrompt(input.spec, input.hardware);
   const adjustment = input.adjustment?.trim();
   const prompt = adjustment ? `${base}. CRAFTER FEEDBACK (highest priority, overrides anything above): ${adjustment}` : base;
 
@@ -104,5 +96,5 @@ export async function runVisualAgent(input: {
     }
   }
 
-  return { url: renderConceptSvg(input.category, input.spec), engine: 'offline-svg', prompt, mime_type: 'image/svg+xml' };
+  return { url: renderConceptSvg(input.spec), engine: 'offline-svg', prompt, mime_type: 'image/svg+xml' };
 }

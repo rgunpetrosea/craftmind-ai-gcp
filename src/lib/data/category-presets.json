@@ -1,23 +1,7 @@
 [
   {
-    "category": "bespoke_bag",
-    "label": "Bespoke Bag",
-    "base_labor_hours": 14,
-    "labor_rate_idr_per_hour": 75000,
-    "hardware_cost_idr_per_item": 35000,
-    "wastage_pct": 0.25,
-    "margin_pct": 0.35,
-    "sourcing_price_idr_per_sqft": 180000,
-    "defaults": {
-      "lining_material": "Suede lining (pigskin)",
-      "structure_temper": "Semi-structured",
-      "stitching_method": "Hand saddle stitch, 3.38mm pitch",
-      "edge_finish": "Burnished edge"
-    }
-  },
-  {
-    "category": "bespoke_wallet",
-    "label": "Bespoke Wallet",
+    "category": "SMALL_GOODS",
+    "label": "Wallets & small goods",
     "base_labor_hours": 5,
     "labor_rate_idr_per_hour": 75000,
     "hardware_cost_idr_per_item": 20000,
@@ -25,15 +9,39 @@
     "margin_pct": 0.4,
     "sourcing_price_idr_per_sqft": 200000,
     "defaults": {
-      "lining_material": "Unlined (full-grain)",
-      "structure_temper": "Firm",
+      "lining": "Tanpa lining (full-grain)",
+      "edge_finish": "BURNISHED",
       "stitching_method": "Hand saddle stitch, 3.0mm pitch",
-      "edge_finish": "Burnished edge"
+      "thread_color": "Serasi dengan kulit",
+      "thread_material": "Waxed linen",
+      "embossing_type": "NONE",
+      "zipper": "YKK Excella, gold"
     }
   },
   {
-    "category": "bespoke_shoes",
-    "label": "Bespoke Shoes",
+    "category": "BAG",
+    "label": "Bags",
+    "base_labor_hours": 14,
+    "labor_rate_idr_per_hour": 75000,
+    "hardware_cost_idr_per_item": 35000,
+    "wastage_pct": 0.25,
+    "margin_pct": 0.35,
+    "sourcing_price_idr_per_sqft": 180000,
+    "defaults": {
+      "structure": "SEMI_STRUCTURED",
+      "main_closure": "MAGNETIC_FLAP",
+      "strap_type": "DETACHABLE_LEATHER",
+      "hardware": "Antique brass",
+      "lining": "Suede lining (pigskin)",
+      "edge_finish": "BURNISHED",
+      "stitching_method": "Hand saddle stitch, 3.38mm pitch",
+      "thread_color": "Serasi dengan kulit",
+      "embossing_type": "NONE"
+    }
+  },
+  {
+    "category": "FOOTWEAR",
+    "label": "Footwear",
     "base_labor_hours": 28,
     "labor_rate_idr_per_hour": 90000,
     "hardware_cost_idr_per_item": 30000,
@@ -41,10 +49,41 @@
     "margin_pct": 0.35,
     "sourcing_price_idr_per_sqft": 190000,
     "defaults": {
-      "lining_material": "Calf lining",
-      "structure_temper": "Structured (toe puff + counter)",
-      "stitching_method": "Goodyear welt",
-      "edge_finish": "Painted edge"
+      "width_fit": "REGULAR",
+      "last_shape": "ALMOND",
+      "lining": "Calf lining",
+      "outsole_type": "LEATHER",
+      "welt_method": "GOODYEAR",
+      "toe_style": "Plain toe"
+    }
+  },
+  {
+    "category": "FURNITURE",
+    "label": "Furniture",
+    "base_labor_hours": 40,
+    "labor_rate_idr_per_hour": 60000,
+    "hardware_cost_idr_per_item": 15000,
+    "wastage_pct": 0.3,
+    "margin_pct": 0.3,
+    "sourcing_price_idr_per_sqft": 150000,
+    "defaults": {
+      "finish_coating": "NATURAL_OIL",
+      "color_stain": "Natural",
+      "joinery_type": "MORTISE_TENON",
+      "assembly": "ASSEMBLED"
+    }
+  },
+  {
+    "category": "CUSTOM_GENERIC",
+    "label": "Custom / other crafts",
+    "base_labor_hours": 8,
+    "labor_rate_idr_per_hour": 75000,
+    "hardware_cost_idr_per_item": 25000,
+    "wastage_pct": 0.25,
+    "margin_pct": 0.35,
+    "sourcing_price_idr_per_sqft": 150000,
+    "defaults": {
+      "quantity": 1
     }
   }
 ]

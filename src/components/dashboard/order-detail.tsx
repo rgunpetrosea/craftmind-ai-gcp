@@ -24,7 +24,9 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { AutomationBadge, ESCALATION_LABEL, SessionStateBadge } from '@/components/ui/status-badges';
 import type { QuotationBreakdown } from '@/lib/agents/pricing';
 import { postJson, usePoll } from '@/lib/hooks/use-poll';
-import type { AutomationMode, ChatMessage, CraftCategory, InventoryItem, OrderPayload, Specifications } from '@/lib/types';
+import { schemaOf } from '@/lib/spec/catalog';
+import { primaryMaterial } from '@/lib/spec/describe';
+import type { AutomationMode, ChatMessage, InventoryItem, OrderPayload, Specifications } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/format';
 import { BomTable } from './bom-table';
@@ -81,8 +83,8 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
     }
   }
 
-  const recalculate = (spec: Specifications, category: CraftCategory) =>
-    act('recalc', () => postJson(`/api/orders/${orderId}/recalculate`, { specifications: spec, craft_category: category }), 'Specification saved — BOM, SqFt, labor and quotation recalculated');
+  const recalculate = (spec: Specifications) =>
+    act('recalc', () => postJson(`/api/orders/${orderId}/recalculate`, { specifications: spec }), 'Specification saved — BOM, SqFt, labor and quotation recalculated');
 
   const regenerateMockup = (withFeedback: boolean) =>
     act(
@@ -170,7 +172,7 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
               <Button size="sm" disabled={!!busy || !feedback.trim() || !s.construction_type || s.construction_type === 'UNSPECIFIED'} onClick={() => regenerateMockup(true)}>
                 {busy === 'mockup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Re-generate mockup with feedback
               </Button>
-              <Button variant="ghost" size="sm" disabled={!!busy || !s.silhouette} onClick={() => regenerateMockup(false)}>
+              <Button variant="ghost" size="sm" disabled={!!busy || s.construction_type === 'UNSPECIFIED'} onClick={() => regenerateMockup(false)}>
                 <RefreshCw className="h-3.5 w-3.5" /> Re-render as is
               </Button>
               <span className="text-[11px] text-stone-500">Only the mockup changes; the specification, BOM and quote stay as they are.</span>
@@ -216,8 +218,8 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
                   <p className="font-semibold text-amber-900">Special sourcing needed</p>
                   <p className="text-amber-800">
                     {allocated_stock
-                      ? `${allocated_stock.name}: only ${allocated_stock.available_sqft} sqft left, need ${bom.estimated_leather_sqft}`
-                      : `No stock matches "${s.exterior_leather}"`}
+                      ? `${allocated_stock.name}: only ${allocated_stock.available_sqft} sqft left, need ${bom.estimated_material_sqft}`
+                      : `No stock matches "${primaryMaterial(s) || 'the requested material'}"`}
                   </p>
                   <p className="mt-1 text-amber-800">
                     +{formatIDR(order.material_sourcing.sourcing_fee_idr)} fee · +{order.material_sourcing.additional_lead_days} days lead time
@@ -231,8 +233,8 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
 
       {/* BOM */}
       <Card>
-        <CardHeader title="2D pattern components & SqFt" icon={<Ruler className="h-4 w-4 text-leather-500" />} />
-        <BomTable bom={bom} />
+        <CardHeader title={order.craft_category === 'FURNITURE' ? 'Cut list & board SqFt' : '2D pattern components & SqFt'} icon={<Ruler className="h-4 w-4 text-leather-500" />} />
+        <BomTable bom={bom} materialLabel={schemaOf(order.craft_category).material_label} />
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -244,11 +246,12 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
               <dl className="space-y-1">
                 {(
                   [
-                    ['Leather', breakdown.leather_idr],
+                    [schemaOf(order.craft_category).material_label, breakdown.material_idr],
                     ['Hardware', breakdown.hardware_idr],
                     ['Labor', breakdown.labor_idr],
                     ['Sourcing', breakdown.sourcing_idr],
-                    ['Customization', breakdown.customization_idr ?? 0],
+                    ['Personalization', breakdown.personalization_idr],
+                    ['Custom requests', breakdown.custom_requests_idr],
                     ['Margin', breakdown.margin_idr],
                   ] as const
                 ).map(([label, v]) => (

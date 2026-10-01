@@ -14,7 +14,7 @@ const LOW_STOCK_SQFT = 10;
 const EMPTY: InventoryItem = {
   stock_id: '',
   name: '',
-  leather_type: 'veg-tan',
+  material_type: 'veg-tan',
   color: '',
   thickness_mm: 1.4,
   available_sqft: 0,
@@ -58,7 +58,7 @@ export function InventoryTable() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Leather stock" />
+        <CardHeader title="Material stock (leather, wood, metal)" />
         {!data ? (
           <Loader2 className="m-6 h-5 w-5 animate-spin text-stone-400" />
         ) : (
@@ -81,7 +81,7 @@ export function InventoryTable() {
                       <p className="font-mono text-[10px] text-stone-400">{item.stock_id}</p>
                     </td>
                     <td className="px-2 py-2 capitalize text-stone-600">
-                      {item.leather_type} · {item.color} · {item.thickness_mm}mm
+                      {item.material_type} · {item.color} · {item.thickness_mm}mm
                     </td>
                     <td className="px-2 py-2 text-stone-600">
                       {item.supplier} <Badge tone={item.origin === 'IMPORT' ? 'blue' : 'neutral'}>{item.origin}</Badge>
@@ -121,11 +121,11 @@ export function InventoryTable() {
           {input('stock_id', 'Stock ID (e.g. STK-VT-BLK-16)')}
           {input('name', 'Display name (Veg-Tan Black 1.6mm)')}
           <select
-            value={form.leather_type}
-            onChange={(e) => setForm({ ...form, leather_type: e.target.value })}
+            value={form.material_type}
+            onChange={(e) => setForm({ ...form, material_type: e.target.value })}
             className="rounded-lg px-2.5 py-1.5 text-sm ring-1 ring-stone-300"
           >
-            {['veg-tan', 'epsom', 'pull-up', 'crazy horse', 'nappa', 'saffiano'].map((t) => (
+            {['veg-tan', 'chrome-tan', 'epsom', 'pull-up', 'crazy horse', 'nappa', 'saffiano', 'teak', 'mahogany', 'walnut', 'suar', 'iron'].map((t) => (
               <option key={t}>{t}</option>
             ))}
           </select>
