@@ -1,5 +1,6 @@
 import { emptySpecifications, normalizeSpecifications } from '@/lib/spec/catalog';
-import type { CraftCategory, OrderPayload } from '@/lib/types';
+import { angleDef, LEGACY_ANGLE } from '@/lib/spec/angles';
+import type { CraftCategory, MockupAngle, MockupRender, OrderPayload } from '@/lib/types';
 import { newId, nowIso } from '@/lib/utils/format';
 
 export const DEFAULT_CRAFTER_ID = process.env.CRAFTER_ID ?? 'crafter-demo-01';
@@ -44,7 +45,31 @@ export function normalizeOrder(order: OrderPayload): OrderPayload {
     specifications,
     pattern_and_bom: { ...rest, estimated_material_sqft: rest.estimated_material_sqft ?? estimated_leather_sqft ?? 0 },
     intake: order.intake ? { ...order.intake, deferred_topics: order.intake.deferred_topics ?? [] } : undefined,
+    media_assets: normalizeMedia(order, specifications),
   };
+}
+
+/** Bring mockup data to the slot model: legacy angle ids are mapped to ANGLE_1..3 and the single legacy mockup becomes ANGLE_1. */
+function normalizeMedia(order: OrderPayload, spec: OrderPayload['specifications']): OrderPayload['media_assets'] {
+  const m = order.media_assets;
+  const slot = (a: string) => (LEGACY_ANGLE[a] ?? a) as MockupAngle;
+  const renders: MockupRender[] | undefined = m.mockup_angles
+    ? m.mockup_angles.map((r) => {
+        const angle = slot(r.angle);
+        return { ...r, angle, view: r.view ?? angleDef(spec.category, angle, spec.construction_type).view };
+      })
+    : m.ai_generated_mockup_url
+      ? [
+          {
+            angle: 'ANGLE_1',
+            view: angleDef(spec.category, 'ANGLE_1', spec.construction_type).view,
+            url: m.ai_generated_mockup_url,
+            engine: m.mockup_engine ?? 'offline-svg',
+            created_at: order.created_at,
+          },
+        ]
+      : undefined;
+  return { ...m, mockup_angles: renders, approved_angles: m.approved_angles?.map(slot) };
 }
 
 /** Orders that are still negotiable; APPROVED orders start a fresh draft on the next inbound message. */

@@ -1,4 +1,5 @@
 import { constructionLabel, describeFields, schemaOf } from '@/lib/spec/catalog';
+import { dimensionNote } from '@/lib/spec/dimensions';
 import type { Specifications } from '@/lib/types';
 
 /** Client-facing text built from the active category's schema: only filled, relevant fields appear. */
@@ -14,7 +15,12 @@ export function modelLine(s: Specifications): string {
 
 /** "• Label: value" lines for every set field, then custom fields. */
 export function specLines(s: Specifications, lang: 'id' | 'en' = 'id'): string[] {
-  const fields = describeFields(s).map(({ field, text }) => `• ${lang === 'id' ? field.label_id : field.label}: ${text}`);
+  const fields = describeFields(s).map(({ key, field, text }) => {
+    const note = key === 'dimensions_cm' && s.dimension_mode !== 'EXACT_CM' ? dimensionNote(s) : '';
+    return `• ${lang === 'id' ? field.label_id : field.label}: ${text}${note ? ` (${note})` : ''}`;
+  });
+  // A size still to be measured on site has no value yet but must appear on the card.
+  if (s.dimension_mode === 'PENDING_SITE_VISIT' && !describeFields(s).some((f) => f.key === 'dimensions_cm')) fields.unshift('• Ukuran: menunggu survei ukur di lokasi');
   const custom = s.custom_fields.map((f) => `• ${f.label}: ${f.value}`);
   return [...fields, ...custom];
 }

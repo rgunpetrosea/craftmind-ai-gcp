@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { matchInventory } from '@/lib/agents/inventory-agent';
 import { computeQuotation } from '@/lib/agents/pricing';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
+import { isRenderingAngles } from '@/lib/mockups';
 import { primaryMaterial } from '@/lib/spec/describe';
 import { expirePartialPause } from '@/lib/utils/takeover';
 
@@ -25,5 +26,5 @@ export async function GET(_request: NextRequest, ctx: RouteContext<'/api/orders/
     : null;
   const allocated = inventory.find((i) => i.stock_id === order.material_sourcing.allocated_stock_id) ?? null;
 
-  return Response.json({ order, messages, breakdown, allocated_stock: allocated });
+  return Response.json({ order, messages, breakdown, allocated_stock: allocated, rendering_angles: isRenderingAngles(id) });
 }

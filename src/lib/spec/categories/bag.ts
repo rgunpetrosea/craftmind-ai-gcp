@@ -1,5 +1,5 @@
 import type { CategorySchema } from '@/lib/spec/fields';
-import { bagDimensionsForLaptop, parseColor, parseCount, parseDimensions, parseLaptopInch, parseLining } from '@/lib/spec/parsers';
+import { parseColor, parseCount, parseLaptopInch, parseLining } from '@/lib/spec/parsers';
 import type { BagAttributes, BagClosure, BagStrap, BagStructure } from '@/lib/types';
 import { dimensionsField, embossingFields, leatherEdgeField, leatherField, stitchingMethodField, threadColorField } from './common';
 
@@ -114,6 +114,14 @@ export const BAG: CategorySchema<'BAG'> = {
       labor_factor: 1,
     },
     {
+      id: 'TOP_HANDLE_BAG',
+      label: 'Top-handle handbag',
+      detect: /tas tangan|hand ?bag|top[\s-]?handle|birkin|kelly|speedy|lady dior/i,
+      vision_cue: 'Structured handbag carried by one or two short top handles (Birkin / Kelly style), often with a flap or turn-lock.',
+      defaults: { dimensions_cm: { length: 30, width: 16, height: 22 }, structure: 'RIGID', main_closure: 'TURN_LOCK_FLAP', strap_type: 'TOP_HANDLE_ONLY' },
+      labor_factor: 1.5,
+    },
+    {
       id: 'CLUTCH',
       label: 'Clutch',
       detect: /clutch/i,
@@ -131,10 +139,9 @@ export const BAG: CategorySchema<'BAG'> = {
     },
   ],
   fields: {
-    dimensions_cm: {
-      ...dimensionsField<BagAttributes>('Outer body size L (front width) x W (depth) x H. May be derived from a named object, e.g. 14-inch laptop ≈ 37 x 10 x 26 cm.'),
-      parse: (t) => parseDimensions(t) ?? (parseLaptopInch(t) ? bagDimensionsForLaptop(parseLaptopInch(t)!) : undefined),
-    },
+    dimensions_cm: dimensionsField<BagAttributes>(
+      'Outer body size L (front width) x W (depth) x H. Exact cm from the client, or inferred from the reference_object (see dimension_mode).',
+    ),
     gusset_depth_cm: {
       type: 'number',
       label: 'Gusset depth',
@@ -220,7 +227,7 @@ export const BAG: CategorySchema<'BAG'> = {
       relevant: (a) => a.strap_type !== 'NONE' || a.main_closure !== 'OPEN_TOP',
     },
     interior_zip_pockets: {
-      type: 'number',
+      type: 'number', zone: 'interior',
       label: 'Interior zip pockets',
       label_id: 'Saku zipper dalam',
       group: 'layout',
@@ -235,9 +242,9 @@ export const BAG: CategorySchema<'BAG'> = {
       description: 'Open slip pockets on the outside (front/back/side).',
       parse: (t) => (/saku depan|kantong depan|front pocket|saku luar/i.test(t) ? 1 : undefined),
     },
-    lining: { type: 'text', label: 'Lining', label_id: 'Lining', group: 'material', description: 'Interior lining material.', parse: parseLining },
+    lining: { type: 'text', zone: 'interior', label: 'Lining', label_id: 'Lining', group: 'material', description: 'Interior lining material.', parse: parseLining },
     padding: {
-      type: 'text',
+      type: 'text', zone: 'interior',
       label: 'Padding',
       label_id: 'Busa / padding',
       group: 'material',
@@ -250,11 +257,11 @@ export const BAG: CategorySchema<'BAG'> = {
     ...embossingFields<BagAttributes>(),
   },
   topics: [
-    { id: 'construction', label: 'Model', ask: 'model tas yang diinginkan (mis. sling bag, messenger laptop, tote, ransel, briefcase)', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
+    { id: 'construction', label: 'Model', ask: 'model tas yang diinginkan (mis. sling bag, messenger laptop, tas tangan, tote, ransel, briefcase)', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
     {
       id: 'size',
       label: 'Ukuran',
-      ask: 'ukuran perkiraan (P x L x T cm) atau barang yang harus muat (mis. laptop 14 inch)',
+      ask: 'ukuran perkiraan (P x L x T cm), model acuan (mis. seukuran Birkin 30), atau barang yang harus muat (mis. iPad Air, laptop 14 inch)',
       required: true,
       fields: ['dimensions_cm', 'laptop_size_inch'],
       deferrable: false,
@@ -262,7 +269,7 @@ export const BAG: CategorySchema<'BAG'> = {
     },
     { id: 'material', label: 'Kulit', ask: 'jenis & warna kulit (mis. Veg-Tan coklat 1.6mm, Pull-Up, Epsom)', required: true, fields: ['exterior_leather'], deferrable: false },
     { id: 'strap', label: 'Strap', ask: 'tali/strap: full kulit atau webbing, lepas-pasang atau permanen', required: false, fields: ['strap_type'], deferrable: true },
-    { id: 'closure', label: 'Penutup', ask: 'penutup utama: flap magnet, kunci putar, gesper, atau sleting', required: false, fields: ['main_closure'], applies_to: ['SLING_BAG', 'MESSENGER_BAG', 'EXECUTIVE_BRIEFCASE', 'CROSSBODY_CAMERA_BAG', 'CLUTCH', 'BACKPACK'], deferrable: true },
+    { id: 'closure', label: 'Penutup', ask: 'penutup utama: flap magnet, kunci putar, gesper, atau sleting', required: false, fields: ['main_closure'], applies_to: ['SLING_BAG', 'MESSENGER_BAG', 'EXECUTIVE_BRIEFCASE', 'CROSSBODY_CAMERA_BAG', 'CLUTCH', 'BACKPACK', 'TOP_HANDLE_BAG'], deferrable: true },
     { id: 'hardware', label: 'Hardware', ask: 'hardware yang diinginkan (mis. solid brass, nikel, gold) dan apakah perlu penguat', required: false, fields: ['hardware'], applies_to: ['EXECUTIVE_BRIEFCASE', 'PADEL_RACKET_BAG', 'MESSENGER_BAG'], deferrable: true },
     { id: 'lining', label: 'Lining', ask: 'bahan lining dalam (suede, kanvas, kulit) atau tanpa lining', required: false, fields: ['lining'], deferrable: true },
     { id: 'personalization', label: 'Emboss', ask: 'apakah mau emboss inisial/logo (kalau iya, tulisan dan posisinya)', required: false, fields: ['embossing_type'], deferrable: true },

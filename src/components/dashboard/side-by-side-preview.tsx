@@ -24,12 +24,22 @@ function Pane({ label, icon, src, empty }: { label: string; icon: ReactNode; src
 }
 
 /** Original client sketch vs AI studio mockup — the core "wow" moment of the review screen. */
-export function SideBySidePreview({ sketchUrl, mockupUrl }: { sketchUrl?: string; mockupUrl?: string }) {
+export function SideBySidePreview({
+  sketchUrl,
+  mockupUrl,
+  mockupLabel = 'AI studio mockup',
+  mockupEmpty = 'Mockup appears once the spec is complete',
+}: {
+  sketchUrl?: string;
+  mockupUrl?: string;
+  mockupLabel?: string;
+  mockupEmpty?: string;
+}) {
   return (
     <div className="flex items-center gap-3">
       <Pane label="Client sketch" icon={<PenLine className="h-3.5 w-3.5" />} src={sketchUrl} empty="No sketch sent — rendered from chat only" />
       <ArrowRight className="mt-6 h-5 w-5 shrink-0 text-leather-500" />
-      <Pane label="AI studio mockup" icon={<Sparkles className="h-3.5 w-3.5" />} src={mockupUrl} empty="Mockup appears once the spec is complete" />
+      <Pane label={mockupLabel} icon={<Sparkles className="h-3.5 w-3.5" />} src={mockupUrl} empty={mockupEmpty} />
     </div>
   );
 }

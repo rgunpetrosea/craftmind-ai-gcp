@@ -142,51 +142,62 @@ The simulator shows this progress in the checklist strip under the header. Green
 
 ## 6. End-to-end test scenarios (`scenarios.csv`)
 
-`scenarios.csv` is the QA matrix: 10 realistic WhatsApp conversations, from a flat card holder (SCN-01) to a human escalation (SCN-10). It feeds both the simulator's scenario player and the automated runner.
+`scenarios.csv` is the QA matrix. Each row is **one client WhatsApp message** plus the expected outcome:
+
+| Column | Meaning |
+| --- | --- |
+| `category` | `bespoke_bag` → BAG, `bespoke_wallet` → SMALL_GOODS, `custom_furniture` → FURNITURE |
+| `client_raw_message` | The message under test, sent verbatim |
+| `expected_dimension_mode` | `EXACT_CM`, `REFERENCE_BASED` or `PENDING_SITE_VISIT` (only checked when the size column is not `Unspecified`) |
+| `expected_reference_or_dim` | A size like `36x6x26 cm` (compared in any axis order), a reference like `Hermes Birkin 30`, or `Unspecified` |
+| `expected_material_status` | `IN_STOCK` / `SPECIAL_SOURCING_NEEDED`, checked once a quote exists |
+| `expected_automation_mode`, `expected_escalation_reason` | Takeover outcome (`NONE` = no escalation) |
+
+Some rows assume earlier context: SCN-06 is a wallet chat already in progress, SCN-07 needs three confused turns, and SCN-08 needs a crafter who has already replied manually. Most rows also need an answer or two before a quote exists. `scripts/build-scenarios.mjs` adds both per scenario ID (`SCRIPT`: `setup` turns before the CSV message, `followups` after it), and the CSV message itself is always sent unchanged.
 
 ### 6.1 Manual run in the simulator
 
-1. Open `/` and choose a scenario from **"pick a test scenario"** under the chat. This starts a fresh chat.
-2. Click **Kirim pesan 1/N** to send the client's first message, then **wait for the AI reply** before sending the next. Messages marked *jawaban lanjutan* answer the AI's questions; *revisi setelah spec card* is a correction sent after the quote.
-3. Scenarios marked as sending a photo (SCN-01, 02, 04) are more realistic if you attach an image with the 🖼 icon before the first message.
-4. When the player says **Skenario selesai**, compare with the expected outcome it shows. Then open `/dashboard` and check the order.
+1. Open `/` and pick a scenario under the chat. This starts a fresh chat.
+2. Click **Kirim …** to send each step and wait for the AI between steps. Each step is labelled as context (*konteks*), the CSV message (*pesan skenario*), a follow-up answer (*jawaban lanjutan*), or a crafter message (*Kirim sebagai crafter*).
+3. Rows of type `text_and_sketch` are more realistic if you attach a sketch with the 🖼 icon.
+4. When it says **Skenario selesai**, compare with the expected summary shown, then check the order on `/dashboard`. The spec card shows **Size basis** and **Reference**.
 
 ### 6.2 Automated run
 
 ```bash
-# terminal 1: short debounce so turns are answered quickly
+# terminal 1
 DEBOUNCE_BASE_MS=800 npm run dev
 
 # terminal 2
-npm run scenarios                            # all 10
-npm run scenarios -- --only SCN-01,SCN-07    # a subset
-npm run scenarios -- --base http://localhost:3100 --timeout 120
+npm run scenarios                              # all rows
+npm run scenarios -- --only SCN-02,SCN-05      # a subset
+npm run scenarios -- --pause 12 --timeout 150  # free-tier Gemini key: pace turns under the per-minute limit
 ```
 
-For each scenario the runner prints the conversation, then ✔/✘ for each check and `PASS`/`FAIL`, and exits non-zero if anything failed.
+For each scenario the runner prints the conversation (the CSV message is marked `CLIENT*`, with its webhook action and debounce), then ✔/✘ per expected column, `–` for a check that doesn't apply (e.g. no material on a chat handed to a human), and `PASS`/`FAIL`.
 
-| Scenario | Checks |
+| Row | What it proves |
 | --- | --- |
-| SCN-01 Flat card holder | `FLAT_CARD_HOLDER` (not bifold), Epsom, emboss initials, quoted |
-| SCN-02 Messenger 14" | `MESSENGER_BAG`, size derived from the laptop, quoted |
-| SCN-03 Bifold | `BIFOLD_WALLET`, ID window, burnished edge |
-| SCN-04 Padel bag | `PADEL_RACKET_BAG`, special sourcing (2.0mm Pull-Up not in stock) |
-| SCN-05 Zip-around | `ZIP_AROUND_LONG_WALLET`, coin zip pocket, gold zipper, Epsom Navy |
-| SCN-06 Slouchy tote | `SLOUCHY_TOTE`, special sourcing (olive green not in stock) |
-| SCN-07 Camera bag | `CROSSBODY_CAMERA_BAG`, correction "+3 cm height, add front pocket" re-quotes |
-| SCN-08 Engraved card holder | `PATTERNED_CARD_HOLDER`, laser engraving |
-| SCN-09 Briefcase | `EXECUTIVE_BRIEFCASE`, quoted |
-| SCN-10 Escalation | `FULL_MANUAL`, client request |
+| SCN-01 | Exact cm are kept as `EXACT_CM`; veg-tan in stock |
+| SCN-02 | "mirip Birkin 30" → `REFERENCE_BASED`, 30 × 16 × 22 cm inferred |
+| SCN-03 | "muat iPad Air 11 inch + charger" → size = device + room + charger depth |
+| SCN-04 | Exotic Himalayan Crocodile → special sourcing (specialist fee and lead time) |
+| SCN-05 | Nightstand for a bedroom, no size → `PENDING_SITE_VISIT`, provisional quote with site-visit fee |
+| SCN-06 | "mas Fendy / admin" → `FULL_MANUAL`, client request |
+| SCN-07 | Repeated "salah / bukan gitu" → confusion rule → `FULL_MANUAL` |
+| SCN-08 | Crafter replied manually → `PARTIAL_PAUSE`; the client message is only logged |
+| SCN-09 | Out-of-stock Pull-Up Biru Tosca + pigskin suede lining → special sourcing, multi-material BOM |
+| SCN-10 | A price/mockup question skips the debounce and is answered immediately |
 
-**Test both modes before a demo:**
+**Before a demo, test both modes:**
 
-- **Offline:** start with `GEMINI_API_KEY= npm run dev`. All 10 should pass.
-- **Online:** the normal key. This exercises the vision and natural-language replies. On the free tier, run a subset (`--only SCN-01,SCN-03,SCN-07,SCN-10`) to stay within quota. Gemini can phrase things differently, so read the transcripts as well as the ticks.
+- **Offline:** `GEMINI_API_KEY= npm run dev`.
+- **Online:** with your key. On the free tier, `gemini-flash-latest` has a small **daily** request limit. If the server log shows `GenerateRequestsPerDay… 429`, run with `GEMINI_FLASH_MODEL=gemini-flash-lite-latest GEMINI_PRO_MODEL=gemini-flash-lite-latest` and `--pause 12`, or enable billing.
 
 ### 6.3 Adding or changing a scenario
 
-1. Edit `scenarios.csv`. Client lines in the *Ringkasan Alur Chat WA* column must be written as `Client: '…'`.
-2. Optionally add follow-up answers and extra checks for the new ID in `SUPPLEMENTS` in `scripts/build-scenarios.mjs`.
+1. Add or edit a row in `scenarios.csv`.
+2. If the row needs earlier context or answers to reach a quote, add an entry to `SCRIPT` in `scripts/build-scenarios.mjs`.
 3. Run `npm run scenarios:build`, then `npm run scenarios -- --only SCN-11`.
 
 ## 7. Troubleshooting

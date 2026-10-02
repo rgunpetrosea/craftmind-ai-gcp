@@ -26,13 +26,26 @@ const KEYWORD_PATTERN = new RegExp(`\\b(${ESCALATION_KEYWORDS.join('|')})`, 'i')
 const HUMAN_INTENT_PATTERN = /\b(ngomong|bicara|berbicara|ngobrol|chat|telepon|telpon|hubungi|kontak)\s+(sama|dengan|langsung|ke|dgn|sm)\b/i;
 const NAME_PATTERN = CRAFTER_NAMES.length ? new RegExp(`\\b(?:mas|pak|bu|mbak|kak)\\s+(${CRAFTER_NAMES.join('|')})\\b`, 'i') : null;
 
+/**
+ * The client says the AI got it wrong again ("salah", "bukan gitu", "maksudku dari tadi"). Counts as a confusion strike
+ * even when the model managed to extract something from the message.
+ */
+const FRUSTRATION_PATTERN =
+  /\b(salah(?!\s+satu)|keliru|bukan (gitu|begitu|yang itu|kayak gitu|yang kayak)|(ga|gak|nggak|tidak) (ngerti|paham|nyambung)|maksud(ku| saya| aku)|dari tadi|udah (di)?bilang|kok (malah|tetep|tetap|masih))/i;
+
+export function isFrustrated(text: string | undefined): boolean {
+  return !!text && FRUSTRATION_PATTERN.test(text);
+}
+
 export const PARTIAL_PAUSE_MINUTES = Number(process.env.PARTIAL_PAUSE_MINUTES ?? 30);
 export const CONFUSION_STRIKE_LIMIT = Number(process.env.CONFUSION_STRIKE_LIMIT ?? 3);
 
-export const HANDOFF_MESSAGES: Record<EscalationReason, string> = {
+export const HANDOFF_MESSAGES: Record<EscalationReason | 'NON_STANDARD', string> = {
   CLIENT_REQUEST: 'Baik kak, percakapan ini kami teruskan ke crafter kami. Mohon ditunggu sebentar ya 🙏',
   CONFUSION_RULE: 'Mohon maaf kak, supaya tidak salah paham, crafter kami akan langsung membantu kakak di sini ya 🙏',
   CRAFTER_OVERRIDE: '',
+  /** Non-standard request (escalated with reason CLIENT_REQUEST). */
+  NON_STANDARD: 'Permintaan khusus ini perlu dicek langsung oleh crafter kami ya kak, supaya hasilnya aman dan sesuai. Kami teruskan sekarang, mohon ditunggu sebentar 🙏',
 };
 
 /** Returns the trigger that matched (keyword, phrase or crafter name), or null. */
@@ -68,14 +81,19 @@ export function setAutomationMode(
   reason?: EscalationReason,
   pauseMinutes = PARTIAL_PAUSE_MINUTES,
   now = new Date(),
+  /** Why the AI handed over, shown to the crafter on the dashboard. */
+  note?: string,
 ): OrderPayload {
   order.automation_mode = mode;
   if (mode === 'AI_COPILOT') {
     delete order.paused_until;
     delete order.escalation_reason;
+    delete order.escalation_note;
     return order;
   }
   order.escalation_reason = reason ?? 'CRAFTER_OVERRIDE';
+  if (note) order.escalation_note = note;
+  else delete order.escalation_note;
   if (mode === 'PARTIAL_PAUSE') order.paused_until = new Date(now.getTime() + pauseMinutes * 60_000).toISOString();
   else delete order.paused_until;
   return order;

@@ -44,6 +44,7 @@ export type BagConstruction =
   | 'PADEL_RACKET_BAG'
   | 'HYBRID_BACKPACK_TOTE'
   | 'CLUTCH'
+  | 'TOP_HANDLE_BAG'
   | 'OTHER_BAG';
 
 export type FootwearConstruction = 'DERBY_SHOES' | 'OXFORD_SHOES' | 'LOAFERS' | 'CHELSEA_BOOTS' | 'SANDALS' | 'OTHER_FOOTWEAR';
@@ -57,6 +58,7 @@ export type FurnitureConstruction =
   | 'BENCH'
   | 'SHELF'
   | 'CABINET'
+  | 'NIGHTSTAND'
   | 'BED_FRAME'
   | 'OTHER_FURNITURE';
 
@@ -208,6 +210,16 @@ export interface AttributesByCategory {
 
 export type AttributeValue = string | number | boolean | Dimensions;
 
+/**
+ * How the size was established.
+ *  EXACT_CM            the client (or crafter) gave centimetres.
+ *  REFERENCE_BASED     inferred from a named reference: an iconic model ("Hermès Birkin 30") or an object the item must
+ *                      hold ("iPad Air 11 inch", "laptop 14 inch"); `reference_object` names it.
+ *  PENDING_SITE_VISIT  the piece must fit a physical space and needs an on-site measurement; dimensions are provisional.
+ *  UNSPECIFIED         size not discussed yet.
+ */
+export type DimensionMode = 'UNSPECIFIED' | 'EXACT_CM' | 'REFERENCE_BASED' | 'PENDING_SITE_VISIT';
+
 /** Free key-value detail for requests no schema field covers (added by the AI or by the crafter). */
 export interface CustomField {
   id: string;
@@ -224,6 +236,9 @@ interface SpecOf<C extends CraftCategory> {
   /** Client-facing product name, e.g. "Dompet kartu pipih" or "Meja makan 6 kursi". */
   model_name: string;
   notes: string;
+  dimension_mode: DimensionMode;
+  /** The reference the size was inferred from (REFERENCE_BASED), e.g. "Hermès Birkin 30"; '' otherwise. */
+  reference_object: string;
   attributes: AttributesByCategory[C];
   custom_fields: CustomField[];
 }
@@ -261,6 +276,27 @@ export interface PatternAndBom {
 
 export type MockupEngine = 'gemini-image' | 'imagen' | 'offline-svg';
 
+/**
+ * Slots of the 3-angle studio mockup set. What each slot shows (its "view") is chosen per craft category in
+ * `src/lib/spec/angles.ts`, e.g. ANGLE_2 is the open interior of a wallet but the side profile of a bag.
+ */
+export type MockupAngle = 'ANGLE_1' | 'ANGLE_2' | 'ANGLE_3';
+
+export interface MockupRender {
+  angle: MockupAngle;
+  /** Category view rendered in this slot, e.g. "CLOSED_EXTERIOR", "SIDE_PROFILE", or "CUSTOM" for a crafter prompt. */
+  view: string;
+  url: string;
+  engine: MockupEngine;
+  created_at: string;
+  /** Why this render fell back to the offline concept, if it did. */
+  error?: string;
+  /** Crafter's custom shot direction used for this render, if any. */
+  custom_prompt?: string;
+  /** Crafter feedback applied to this angle, oldest first. */
+  feedback?: string[];
+}
+
 export interface MediaAssets {
   original_sketch_url?: string;
   ai_generated_mockup_url?: string;
@@ -268,6 +304,14 @@ export interface MediaAssets {
   mockup_engine?: MockupEngine;
   /** Crafter feedback applied to the mockup, oldest first. */
   mockup_feedback?: string[];
+  /** Why the last render fell back to the offline concept (quota, billing, API error). */
+  mockup_error?: string;
+  /** Multi-angle set (EXTERIOR_CLOSED mirrors ai_generated_mockup_url / mockup_engine / mockup_error). */
+  mockup_angles?: MockupRender[];
+  /** Angles the crafter sent to the client with the formal quotation. */
+  approved_angles?: MockupAngle[];
+  /** Crafter's saved custom shot direction per angle slot (overrides the category default until cleared). */
+  angle_prompts?: Partial<Record<MockupAngle, string>>;
 }
 
 /** Multi-turn requirement-gathering progress, owned by the orchestrator. Topic keys are "<CATEGORY>:<topic id>". */
@@ -298,6 +342,8 @@ export interface OrderPayload {
   automation_mode: AutomationMode;
   paused_until?: string; // ISO Timestamp for Partial Takeover
   escalation_reason?: EscalationReason;
+  /** Human-readable reason shown to the crafter when the AI handed over (e.g. the non-standard request). */
+  escalation_note?: string;
   craft_category: CraftCategory;
   specifications: Specifications;
   material_sourcing: MaterialSourcing;
@@ -384,6 +430,8 @@ export interface CategoryPreset {
   margin_pct: number;
   /** Price assumed for primary material that must be special-sourced. */
   sourcing_price_idr_per_sqft: number;
+  /** On-site measurement fee charged when dimension_mode is PENDING_SITE_VISIT. */
+  site_visit_fee_idr?: number;
   /** Workshop defaults applied when the client leaves a field open ("terserah"), keyed by attribute name of this category. */
   defaults: Partial<Record<string, string | number | boolean>>;
 }
@@ -399,10 +447,22 @@ export interface IntakeResult {
   /** Topic keys the client deferred to the workshop in this burst. */
   deferred_topics: string[];
   vision_notes?: string;
+  /** Questions in the latest client burst that the assistant must answer before moving on. */
+  questions: ClientQuestion[];
+  /** Set when the request is outside the workshop's standard crafting scope (escalated to the crafter). */
+  non_standard_reason?: string;
+}
+
+/** TERMINOLOGY / DESIGN / OTHER block the spec card until answered; PRICE_TIMELINE is answered by the crafter's quote. */
+export type QuestionKind = 'TERMINOLOGY' | 'DESIGN' | 'PRICE_TIMELINE' | 'OTHER';
+
+export interface ClientQuestion {
+  text: string;
+  kind: QuestionKind;
 }
 
 export interface OrchestratorResult {
   order: OrderPayload;
-  stage: 'GATHERING' | 'QUOTED' | 'ESCALATED' | 'SKIPPED_TAKEOVER';
+  stage: 'GATHERING' | 'ANSWERED' | 'QUOTED' | 'ESCALATED' | 'SKIPPED_TAKEOVER';
   reply?: string;
 }

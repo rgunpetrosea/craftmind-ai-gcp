@@ -3,7 +3,17 @@ import { defaultHardware, runPatternAgent } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { runVisualAgent } from '@/lib/agents/visual-agent';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
-import { filledTopicCount, finalizeSpecifications, normalizeSpecifications, planConversation, topicKey } from '@/lib/spec/catalog';
+import { renderRemainingAnglesInBackground } from '@/lib/mockups';
+import {
+  filledTopicCount,
+  finalizeSpecifications,
+  MAX_QUESTIONS_PER_TURN,
+  normalizeSpecifications,
+  planConversation,
+  topicKey,
+  topicsFor,
+} from '@/lib/spec/catalog';
+import { findGlossary } from '@/lib/spec/glossary';
 import { specCardText } from '@/lib/spec/describe';
 import type { IntakeProgress, OrchestratorResult, OrderPayload } from '@/lib/types';
 import { nowIso } from '@/lib/utils/format';
@@ -12,9 +22,10 @@ import {
   expirePartialPause,
   HANDOFF_MESSAGES,
   isAiBlocked,
+  isFrustrated,
   setAutomationMode,
 } from '@/lib/utils/takeover';
-import { sendToClient } from '@/lib/whatsapp';
+import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
 
 /**
  * Multi-agent execution engine:
@@ -114,8 +125,29 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const clientFinished = intake.client_finished || wasLocked;
   const plan = planConversation(spec0, progress, clientFinished);
 
-  // --- Confusion rule: no checklist progress while the AI is still asking ----
-  const stalled = !plan.ready && !clientFinished && filledTopicCount(spec0, progress) <= filledTopicCount(known, stored);
+  // --- Non-standard request: outside the crafting glossary → straight to a human ---------------
+  if (intake.non_standard_reason) {
+    const latest = await commit(orderId, {
+      craft_category: spec0.category,
+      specifications: spec0,
+      intake: { ...progress, vision_notes: intake.vision_notes, processed_message_id },
+    });
+    if (!isAiBlocked(latest)) {
+      setAutomationMode(latest, 'FULL_MANUAL', 'CLIENT_REQUEST', undefined, undefined, intake.non_standard_reason);
+      await store.saveOrder(latest);
+      await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
+      await sendToClient(latest, 'SYSTEM', HANDOFF_MESSAGES.NON_STANDARD);
+      await notifyCrafter(latest, intake.non_standard_reason);
+    }
+    return { order: latest, stage: 'ESCALATED', reply: HANDOFF_MESSAGES.NON_STANDARD };
+  }
+
+  // --- Confusion rule: the client keeps correcting us, or the conversation makes no progress --------
+  // A turn spent asking us questions is engagement, not confusion (unless the client is also frustrated).
+  const blockingQuestions = intake.questions.filter((q) => q.kind !== 'PRICE_TIMELINE');
+  const frustrated = isFrustrated(burst.map((m) => m.text ?? '').join('\n'));
+  const noProgress = !plan.ready && !clientFinished && !blockingQuestions.length && filledTopicCount(spec0, progress) <= filledTopicCount(known, stored);
+  const stalled = frustrated || noProgress;
   if (conversation) {
     conversation.confusion_strikes = stalled ? conversation.confusion_strikes + 1 : 0;
     conversation.updated_at = nowIso();
@@ -129,13 +161,49 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       intake: { ...progress, vision_notes: intake.vision_notes, processed_message_id },
     });
     if (!isAiBlocked(latest)) {
-      setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE');
+      setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE', undefined, undefined, `AI tidak berhasil memahami klien ${CONFUSION_STRIKE_LIMIT}x berturut-turut`);
       await store.saveOrder(latest);
       await sendToClient(latest, 'SYSTEM', HANDOFF_MESSAGES.CONFUSION_RULE);
+      await notifyCrafter(latest, latest.escalation_note!);
     }
     conversation.confusion_strikes = 0;
     await store.saveConversation(conversation);
     return { order: latest, stage: 'ESCALATED', reply: HANDOFF_MESSAGES.CONFUSION_RULE };
+  }
+
+  // --- Q&A: the client asked what something means / how it will look → answer before locking anything ---
+  if (blockingQuestions.length) {
+    const askedAbout = new Set(blockingQuestions.flatMap((q) => findGlossary(q.text, spec0.category)).map((g) => g.topic));
+    const preference = topicsFor(spec0).filter((t) => askedAbout.has(t.id));
+    const ask = [...new Map([...preference, ...plan.missing_required].map((t) => [t.id, t])).values()].slice(0, MAX_QUESTIONS_PER_TURN);
+    const askedKeys = ask.map((t) => topicKey(spec0, t));
+    const reply = await composeReply({
+      clientName: order.client_info.client_name_wa,
+      plan: { ...plan, ask, ready: false },
+      spec: spec0,
+      messages,
+      visionNotes: intake.vision_notes,
+      isFirstTurn: !messages.some((m) => m.sender === 'AI'),
+      questions: intake.questions,
+    });
+    const latest = await commit(orderId, {
+      craft_category: spec0.category,
+      specifications: spec0,
+      // a locked spec card stays locked; the answer just explains it
+      session_state: wasLocked ? 'PENDING_CRAFTER_APPROVAL' : 'REQUIREMENT_GATHERING',
+      intake: {
+        ...progress,
+        // the client is reconsidering these topics: their earlier "terserah" no longer settles them
+        deferred_topics: progress.deferred_topics.filter((k) => !askedKeys.includes(k)),
+        asked_topics: [...new Set([...progress.asked_topics, ...askedKeys])],
+        last_asked: askedKeys,
+        question_rounds: progress.question_rounds + 1,
+        vision_notes: intake.vision_notes,
+        processed_message_id,
+      },
+    });
+    const sent = await replyIfStillAllowed(orderId, reply);
+    return { order: latest, stage: sent ? 'ANSWERED' : 'SKIPPED_TAKEOVER', reply };
   }
 
   // --- Still gathering: ask the next one or two things, naturally -------------
@@ -188,6 +256,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
         spec,
         hardware: defaultHardware(spec),
         sketchUrl: order.media_assets.original_sketch_url,
+        angle: 'ANGLE_1',
+        customPrompt: order.media_assets.angle_prompts?.ANGLE_1,
       }),
       store.listInventory(),
     ]);
@@ -196,7 +266,24 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       ...patch,
       material_sourcing: quote.material_sourcing,
       pattern_and_bom: quote.pattern_and_bom,
-      media_assets: { ...order.media_assets, ai_generated_mockup_url: mockup.url, mockup_engine: mockup.engine },
+      media_assets: {
+        ...order.media_assets,
+        ai_generated_mockup_url: mockup.url,
+        mockup_engine: mockup.engine,
+        mockup_error: mockup.error,
+        // a changed spec invalidates the old angle set; the other angles are re-rendered after the reply is sent
+        mockup_angles: [
+          {
+            angle: 'ANGLE_1',
+            view: mockup.view,
+            url: mockup.url,
+            engine: mockup.engine,
+            created_at: nowIso(),
+            ...(mockup.error && { error: mockup.error }),
+            ...(mockup.custom_prompt && { custom_prompt: mockup.custom_prompt }),
+          },
+        ],
+      },
     };
   }
 
@@ -205,5 +292,6 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     ? specCardText(order.client_info.client_name_wa, spec, { updated: wasLocked })
     : 'Catatan kakak sudah kami teruskan ke crafter kami ya 🙏';
   const sent = await replyIfStillAllowed(orderId, reply);
+  if (needsBuild) renderRemainingAnglesInBackground(orderId);
   return { order: latest, stage: sent ? 'QUOTED' : 'SKIPPED_TAKEOVER', reply };
 }

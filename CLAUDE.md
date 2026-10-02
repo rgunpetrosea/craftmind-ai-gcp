@@ -105,6 +105,8 @@ export interface OrderPayload {
     construction_type: string;          // form factor of THIS category, or 'UNSPECIFIED' (unclassified)
     model_name: string;
     notes: string;
+    dimension_mode: 'UNSPECIFIED' | 'EXACT_CM' | 'REFERENCE_BASED' | 'PENDING_SITE_VISIT';
+    reference_object: string;           // e.g. "Hermès Birkin 30", "iPad Air 11 inch" when REFERENCE_BASED, else ''
     attributes: AttributesByCategory[category]; // isolated per category, see src/lib/types/index.ts
     custom_fields: Array<{ id: string; label: string; value: string; surcharge_idr: number; source: 'AI' | 'CRAFTER' }>;
   };
@@ -161,6 +163,48 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 - Dashboard form shows only relevant fields that are filled or required; the rest sit under "+ Add field";
   "+ Add Custom Field" adds key/value rows with an optional surcharge that flows into the quotation.
 
+## Flexible Dimension Rules (v4)
+- Clients rarely know centimetres. `dimension_mode` records how the size was established, `reference_object` what it came from.
+- Precedence (`resolveDimensionSource()` in `src/lib/spec/dimensions.ts`, runs after every intake turn, Gemini or offline):
+  explicit cm from the client → `EXACT_CM`; furniture that must fit a room with no measurements → `PENDING_SITE_VISIT`
+  (dimensions cleared, provisional size at lock, `site_visit_fee_idr` from the preset added to the quote); a reference in
+  `src/lib/spec/references.ts` (Birkin/Kelly/Speedy, iPad/laptop/A4/passport) → `REFERENCE_BASED` with the table's size
+  (MODEL = the model's own size, CONTENT = object + room, deeper with accessories); otherwise Gemini's own inferred reference.
+- The reference table is also injected into the Gemini extraction prompt as calibration; add new references there, not in prompts.
+- Dimensions typed by the crafter on the dashboard switch the mode to `EXACT_CM` and are never overwritten by the resolver.
+
+## Q&A, Non-Standard Escalation & Mockup Rules (v5)
+- Knowledge base: `src/lib/spec/glossary.ts` (edges, stitching, leathers/textures, lining, emboss, welts, joinery, wood finishes).
+- A client question (TERMINOLOGY / DESIGN / OTHER, classified by Gemini or `detectQuestions`) is answered FIRST, grounded in
+  glossary facts and the current spec, and the related topic's preference is (re)asked; the spec card is NOT locked on that
+  turn (a locked card stays locked). PRICE_TIMELINE questions never block the card. A term inside "X itu kayak gimana?" is
+  not a choice; "bisa bikin X?" is a request, not a question. Q&A turns are not confusion strikes.
+- Requests outside the crafting scope (electronics, safety certifications, protected materials, mechanisms; Gemini
+  `non_standard_request` or `NON_STANDARD` regex) → `FULL_MANUAL` + `CLIENT_REQUEST`, `escalation_note` with the reason,
+  handoff message to the client, `notifyCrafter()` (dashboard + optional WhatsApp to `CRAFTER_WA_NUMBER`).
+- Mockups try every model in `MODEL_CHAINS.image`; only when all fail is the offline SVG used, and
+  `media_assets.mockup_error` tells the crafter why (free-tier keys have image quota 0 → billing required).
+
+## Multi-Angle Mockups & Client Delivery (v7)
+- 3 angle SLOTS (`ANGLE_1..3`); each slot's VIEW comes from the category strategy matrix in `src/lib/spec/angles.ts`:
+  * SMALL_GOODS: closed/folded exterior · fully open interior (slots + lining) · stitch & edge macro
+    (flat card holders: plain outer face · slot face · macro)
+  * BAG: front 3/4 hero · side profile (gusset, strap attachment, edges) · top-down open interior
+  * FOOTWEAR: lateral profile on display · top-down vamp/laces/toe box · welt & sole macro
+  * FURNITURE: isometric in styled room · drawers/doors open (or underside) · joinery/upholstery/handles macro
+  * CUSTOM_GENERIC: hero · alternate · detail
+- Strict isolation: every field has a visual `zone` ('interior' = card slots, cash compartments, ID window, coin pocket,
+  lining, inner pockets, padding). EXTERIOR views get a spec JSON WITHOUT interior fields plus the rule
+  "CLOSED FOLDED VIEW ONLY. Do NOT render interior slots, linings, or open compartments. Render front emboss on exterior
+  shell if specified." INTERIOR views get everything. Form-factor hints are neutral (never say open/closed).
+- Prompt = subject + `PRODUCT SPEC (JSON)` (scoped) + `CAMERA / SHOT` + optional `STRICT RULE` + style.
+- Crafter override: `POST /api/ai/mock-generator { order_id, angle_index, custom_angle_prompt }` replaces the shot (spec JSON
+  still first, scope FULL), is saved in `media_assets.angle_prompts` and reused until `clear_custom_prompt: true`.
+- ANGLE_1 renders first (inline at spec lock), the others in the background with ANGLE_1 as reference image.
+- Images retry hard before the offline SVG: 3 attempts per model honouring Google's `retryDelay` on 429, 2 passes over
+  `MODEL_CHAINS.image`; only hard quotas (limit 0 / per-day) skip a model. The SVG is the very last resort.
+- Renders are re-encoded to ≤1280px JPEG (`compressRender`). Approve sends the quote + selected angles + `/gallery/<id>`.
+
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.
 2. Install `@google/genai` or `@google-cloud/vertexai`, `firebase-admin`, `lucide-react`, and `clsx`.
@@ -189,9 +233,11 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
     `detail_topics` (embossing, thread, lining, edge, zipper, strap, hardware) once each. "Terserah" defers a topic to
     workshop defaults; "itu saja" finishes. The spec card is locked only when the plan is `ready`; later messages are
     corrections that re-quote (`+3 cm`, `tambah saku depan`) instead of reopening questions.
-12. Testing: `scenarios.csv` is the QA matrix. After editing it run `npm run scenarios:build`; verify with
-    `npm run scenarios` against a running server (see WALKTHROUGH.md §6). Keep all 10 passing offline
-    (`GEMINI_API_KEY=` blank) as well as online.
+12. Testing: `scenarios.csv` is the QA matrix (one client message + expected dimension mode, reference/size, material,
+    automation and escalation per row). Context a row assumes (setup turns, crafter replies) and the follow-up answers
+    that reach a quote live in `SCRIPT` in `scripts/build-scenarios.mjs`. After editing either run `npm run scenarios:build`;
+    verify with `npm run scenarios` against a running server (WALKTHROUGH.md §6). Keep all rows passing offline
+    (`GEMINI_API_KEY=` blank) and online (`--pause 12` on a free-tier key).
 13. Before finishing any change: `npm run typecheck && npm run lint && npm run build`.
 
 @AGENTS.md

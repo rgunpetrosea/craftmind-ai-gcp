@@ -46,7 +46,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       detect: /dompet kartu|card ?holder|card ?sleeve|card ?case|kartu pipih|pipih|slim wallet/i,
       vision_cue:
         'A SINGLE FLAT panel/sleeve with card slots visible on the front (and/or back) face. There is NO center fold line and it does not open like a book. Cards slide in from the top edge. Often a central pocket for folded cash.',
-      defaults: { dimensions_cm: { length: 10, width: 0.6, height: 7 }, front_slots: 2, back_slots: 2, central_pockets: 1 },
+      defaults: { dimensions_cm: { length: 10, width: 0.4, height: 7 }, front_slots: 2, back_slots: 2, central_pockets: 1 },
       labor_factor: 0.5,
     },
     {
@@ -110,7 +110,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       parse: parseColor,
     },
     front_slots: {
-      type: 'number',
+      type: 'number', zone: 'interior',
       label: 'Front card slots',
       label_id: 'Slot kartu depan',
       group: 'layout',
@@ -121,7 +121,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       },
     },
     back_slots: {
-      type: 'number',
+      type: 'number', zone: 'interior',
       label: 'Back card slots',
       label_id: 'Slot kartu belakang',
       group: 'layout',
@@ -132,7 +132,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       },
     },
     central_pockets: {
-      type: 'number',
+      type: 'number', zone: 'interior',
       label: 'Central pocket',
       label_id: 'Kantong tengah',
       group: 'layout',
@@ -140,7 +140,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       parse: (t) => (/selipan uang|uang tunai|kantong tengah|saku tengah|pocket tengah/i.test(t) && !/slot\s*uang/i.test(t) ? 1 : undefined),
     },
     cash_compartments: {
-      type: 'number',
+      type: 'number', zone: 'interior',
       label: 'Cash compartments',
       label_id: 'Kompartemen uang',
       group: 'layout',
@@ -148,7 +148,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       parse: (t) => parseCount(t, 'slot uang|kompartemen uang|ruang uang|cash'),
     },
     id_window: {
-      type: 'boolean',
+      type: 'boolean', zone: 'interior',
       label: 'ID / photo window',
       label_id: 'Jendela ID/foto',
       group: 'layout',
@@ -156,7 +156,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       parse: (t) => (/mika|foto transparan|id window|jendela|window/i.test(t) ? true : undefined),
     },
     coin_zip_pocket: {
-      type: 'boolean',
+      type: 'boolean', zone: 'interior',
       label: 'Coin zip pocket',
       label_id: 'Saku koin ber-zipper',
       group: 'layout',
@@ -174,7 +174,7 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       relevant: hasZip,
     },
     lining: {
-      type: 'text',
+      type: 'text', zone: 'interior',
       label: 'Lining',
       label_id: 'Lining',
       group: 'material',

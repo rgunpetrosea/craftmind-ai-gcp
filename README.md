@@ -63,13 +63,14 @@ The in-memory store is seeded with three demo orders: one pending approval, one 
 | `GET /api/webhook/whatsapp?phone=` | Session poll (order, messages, `ai_pending`) |
 | `DELETE /api/webhook/whatsapp?phone=` | Start a fresh draft for this phone number |
 | `POST /api/ai/orchestrator` | Run all agents now `{ order_id, force? }` (`force` recomputes during a takeover without messaging the client) |
-| `POST /api/ai/mock-generator` | (Re)render the mockup; `{ order_id, adjustment }` applies crafter feedback without touching the spec or quote |
+| `POST /api/ai/mock-generator` | `{ order_id, angles?, adjustment? }` renders up to 3 angles (exterior / interior / detail); feedback applies to the requested angles only |
 | `POST /api/ai/pattern-bom` | Pattern, SqFt, stock match and quote |
 | `GET /api/orders`, `GET /api/orders/:id` | Board and detail (with cost breakdown) |
 | `POST /api/orders/:id/takeover` | `{ mode: 'AI_COPILOT'\|'PARTIAL_PAUSE'\|'FULL_MANUAL', pause_minutes? }` |
 | `POST /api/orders/:id/recalculate` | `{ specifications, use_ai? }` saves crafter corrections and recomputes BOM, SqFt, labor and price |
 | `GET /api/scenarios` | Test scenarios generated from `scenarios.csv` |
-| `POST /api/orders/:id/approve` | `{ quotation_idr?, note? }` sends the formal quotation |
+| `POST /api/orders/:id/approve` | `{ quotation_idr?, note?, angles? }` sends the formal quotation, the selected mockup angles and a client gallery link |
+| `GET /gallery/:id` | Client-facing gallery of the approved mockup angles |
 | `GET/PUT /api/inventory`, `GET/PUT /api/presets` | Master data |
 
 ## GCP stack

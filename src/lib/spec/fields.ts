@@ -36,6 +36,11 @@ interface FieldBase<A, V> {
   unit?: string;
   /** Offline / heuristic extraction from client text. Return undefined when nothing was found. */
   parse?: (text: string) => V | undefined;
+  /**
+   * Where the attribute is visible on the finished piece. 'interior' fields (card slots, lining, inner pockets) are kept
+   * out of closed/exterior mockup angles so the image model doesn't render them; default 'exterior'.
+   */
+  zone?: 'exterior' | 'interior';
   /** Hide the field when it does not apply (e.g. zipper on a flat card holder). Defaults to always relevant. */
   relevant?: (attrs: A, construction: string) => boolean;
 }

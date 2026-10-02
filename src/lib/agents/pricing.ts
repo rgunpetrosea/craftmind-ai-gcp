@@ -10,6 +10,8 @@ export interface QuotationBreakdown {
   personalization_idr: number;
   /** Sum of crafter-assigned surcharges on custom fields. */
   custom_requests_idr: number;
+  /** On-site measurement when the size is PENDING_SITE_VISIT. */
+  site_visit_idr: number;
   subtotal_idr: number;
   margin_idr: number;
   total_idr: number;
@@ -47,11 +49,12 @@ export function computeQuotation(
   const sourcing_idr = sourcing.sourcing_fee_idr;
   const personalization_idr = personalizationFee(spec);
   const custom_requests_idr = (spec?.custom_fields ?? []).reduce((s, f) => s + (Number(f.surcharge_idr) || 0), 0);
-  const subtotal_idr = material_idr + hardware_idr + labor_idr + sourcing_idr + personalization_idr + custom_requests_idr;
+  const site_visit_idr = spec?.dimension_mode === 'PENDING_SITE_VISIT' ? (preset.site_visit_fee_idr ?? 0) : 0;
+  const subtotal_idr = material_idr + hardware_idr + labor_idr + sourcing_idr + personalization_idr + custom_requests_idr + site_visit_idr;
   const margin_idr = Math.round(subtotal_idr * preset.margin_pct);
   // Round up to the nearest Rp 10.000 for a clean client-facing number.
   const total_idr = Math.ceil((subtotal_idr + margin_idr) / 10_000) * 10_000;
-  return { material_idr, hardware_idr, labor_idr, sourcing_idr, personalization_idr, custom_requests_idr, subtotal_idr, margin_idr, total_idr };
+  return { material_idr, hardware_idr, labor_idr, sourcing_idr, personalization_idr, custom_requests_idr, site_visit_idr, subtotal_idr, margin_idr, total_idr };
 }
 
 /** Pattern draft → stock match → priced BOM, as stored on the order. */

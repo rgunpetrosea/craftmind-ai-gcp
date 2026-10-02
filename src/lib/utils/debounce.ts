@@ -35,10 +35,13 @@ export interface DebounceSignal {
   media_type?: MessageMediaType;
 }
 
+/** Asking for the price, the quote or the visual: answer immediately wherever it appears in the message. */
+const PRIORITY_INTENT = /\b(berapa|harga\w*|biaya\w*|ongkos|price|quote|penawaran\w*|mockup|gambaran|render|visual\w*)\b/i;
+
 /** Hybrid trigger: the client signalled they're waiting for an answer. */
 export function isFlushTrigger(signal: DebounceSignal): boolean {
   const text = signal.text?.trim() ?? '';
-  return text.endsWith('?') || CLOSING_PHRASE.test(text);
+  return text.endsWith('?') || CLOSING_PHRASE.test(text) || PRIORITY_INTENT.test(text);
 }
 
 export function adaptiveDelay(signal: DebounceSignal, cfg: DebounceConfig = DEFAULT_DEBOUNCE): number {

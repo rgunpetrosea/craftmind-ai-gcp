@@ -13,7 +13,7 @@ import {
   isAiBlocked,
   setAutomationMode,
 } from '@/lib/utils/takeover';
-import { sendToClient } from '@/lib/whatsapp';
+import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
 
 /**
  * Inbound WhatsApp events (simulator today, WA Cloud API adapter later).
@@ -110,11 +110,12 @@ export async function POST(request: NextRequest) {
 
   const keyword = detectEscalationKeyword(inbound.text);
   if (keyword && order.automation_mode !== 'FULL_MANUAL') {
-    setAutomationMode(order, 'FULL_MANUAL', 'CLIENT_REQUEST');
+    setAutomationMode(order, 'FULL_MANUAL', 'CLIENT_REQUEST', undefined, undefined, `Klien minta bicara dengan crafter ("${keyword}")`);
     debouncer.cancel(order.order_id);
     await store.saveOrder(order);
     await store.appendMessage({ ...inbound, awaiting_crafter_review: true });
     await sendToClient(order, 'SYSTEM', HANDOFF_MESSAGES.CLIENT_REQUEST);
+    await notifyCrafter(order, order.escalation_note ?? 'Klien minta bicara dengan crafter');
     return respond('ESCALATED_TO_CRAFTER', order, { keyword });
   }
 

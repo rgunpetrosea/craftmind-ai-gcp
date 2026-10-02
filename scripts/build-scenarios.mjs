@@ -1,5 +1,12 @@
-// Converts scenarios.csv (the QA matrix) into src/lib/data/scenarios.json for the simulator's scenario picker
-// and the end-to-end runner (scripts/run-scenarios.mjs).   Usage: npm run scenarios:build
+// Converts scenarios.csv (the QA matrix) into src/lib/data/scenarios.json for the simulator's scenario player and
+// the end-to-end runner (scripts/run-scenarios.mjs).   Usage: npm run scenarios:build
+//
+// Each CSV row is ONE client message plus the expected outcome. Some rows assume prior context (a confused
+// conversation, a crafter who already replied...), and most need a couple of answers before a quote exists, so this
+// script adds, per scenario id:
+//   setup     scripted turns played BEFORE the CSV message (client or crafter)
+//   followups client answers played AFTER it, only while the AI is still gathering (stop once quoted / taken over)
+// The CSV message itself is always sent verbatim and is the turn under test.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const csv = readFileSync(new URL('../scenarios.csv', import.meta.url), 'utf8');
@@ -27,68 +34,74 @@ function parseCsv(text) {
   return rows;
 }
 
-const [header, ...rows] = parseCsv(csv);
-const col = Object.fromEntries(header.map((h, i) => [h.trim(), i]));
+const CATEGORY = { bespoke_bag: 'BAG', bespoke_wallet: 'SMALL_GOODS', bespoke_shoes: 'FOOTWEAR', custom_furniture: 'FURNITURE', furniture: 'FURNITURE' };
+const DONE = 'Terserah mas untuk detail lainnya. Itu saja kak';
+const client = (text, extra = {}) => ({ as: 'CLIENT', text, ...extra });
+const crafter = (text) => ({ as: 'CRAFTER', text });
 
-/**
- * What the client types after the AI has asked for missing details, and scenario-specific assertions.
- * Where the CSV has the AI recommend a material and the client simply agrees ("iya", "sip"), the follow-up states that
- * material explicitly, so the scenario also passes on the offline parser (which cannot read the AI's own suggestion).
- */
-const SUPPLEMENTS = {
-  'SCN-01': { followups: ['Ukurannya sekitar 10x7 cm ya mas', 'Terserah mas untuk lainnya. Itu saja kak'], checks: { 'attributes.embossing_type': 'EMBOSS_INITIALS', 'attributes.exterior_leather~': 'epsom' } },
-  'SCN-02': { followups: ['Ukuran ikut laptop 14 inch aja mas, kulit veg-tan coklat 1.6mm', 'Terserah mas untuk lainnya. Itu saja kak'] },
-  'SCN-03': { followups: ['Ukurannya 11x9 cm', 'Terserah mas untuk lainnya. Itu saja kak'], checks: { 'attributes.id_window': true, 'attributes.edge_finish': 'BURNISHED' } },
-  'SCN-04': { followups: ['Oke pakai Pull-Up tebal 2.0mm ya mas, ukuran 30x10x60 cm', 'Terserah mas untuk lainnya. Itu saja kak'], checks: { 'material_sourcing.status': 'SPECIAL_SOURCING_NEEDED' } },
-  'SCN-05': { followups: ['Ukuran 20x2.5x10 cm', 'Terserah mas untuk lainnya. Itu saja kak'], checks: { 'attributes.coin_zip_pocket': true, 'attributes.zipper~': 'gold', 'attributes.exterior_leather~': 'navy' } },
-  'SCN-06': { followups: ['Chrome-tan olive green 1.4mm ya mas, ukuran 38x14x32 cm', 'Terserah mas untuk lainnya. Itu saja kak'], checks: { 'material_sourcing.status': 'SPECIAL_SOURCING_NEEDED' } },
+const SCRIPT = {
+  'SCN-01': { followups: [DONE, DONE] },
+  'SCN-02': { followups: ['Kulitnya Epsom hitam aja mas', DONE, DONE] },
+  'SCN-03': { followups: ['Kulitnya veg-tan coklat 1.6mm ya mas', DONE, DONE] },
+  'SCN-04': { followups: ['Ukurannya 11.5 x 9 cm, tebal 1.2 cm ya mas', DONE, DONE] },
+  'SCN-05': { followups: [DONE, DONE] },
+  'SCN-06': { setup: [client('Mau bikin dompet bifold kulit ya mas')] },
   'SCN-07': {
-    followups: ['Ukuran 18x8x14 cm, kulit veg-tan coklat 1.6mm', 'Terserah mas untuk lainnya. Itu saja kak'],
-    // the CSV's second client turn is a correction that arrives after the first spec card
-    postQuoteFrom: 1,
-    checks: { height_plus_3: true, 'attributes.exterior_pockets>=': 1 },
+    // three turns without progress before the CSV message → confusion strike limit (3) is reached on the CSV turn
+    setup: [client('Mau bikin tas selempang kulit pake flap ya'), client('Bukan gitu mas maksudnya penutupnya'), client('Masih salah mas, bukan yang itu')],
   },
-  'SCN-08': { followups: ['Pakai veg-tan natural aja mas, ukuran 10x7 cm', 'Terserah mas untuk lainnya. Itu saja kak'], checks: { 'attributes.embossing_type': 'LASER_ENGRAVING' } },
-  'SCN-09': { followups: ['Epsom hitam 1.8mm ya mas, ukuran 42x10x31 cm', 'Terserah mas untuk lainnya. Itu saja kak'] },
-  'SCN-10': { followups: [] },
+  'SCN-08': {
+    setup: [
+      client('Mau tas selempang 30x10x20 cm kulit veg-tan coklat 1.6mm'),
+      client(DONE, { if_not_quoted: true }),
+      client(DONE, { if_not_quoted: true }),
+      crafter('Halo kak, saya Fendy crafternya. Penawarannya saya cek dulu ya'),
+    ],
+  },
+  'SCN-09': { followups: [DONE, DONE] },
+  'SCN-10': { setup: [client('Mau bikin tote bag kulit veg-tan coklat 1.6mm, yang muat laptop 14 inch')], followups: [DONE, DONE] },
 };
 
+const [header, ...rows] = parseCsv(csv);
+const col = Object.fromEntries(header.map((h, i) => [h.trim(), i]));
+const get = (r, k) => (r[col[k]] ?? '').trim();
+
 const scenarios = rows.map((r) => {
-  const id = r[col['ID']].trim();
-  const flow = r[col['Ringkasan Alur Chat WA (End-to-End)']];
-  const expectedRaw = r[col['Output Parsed Specs & Challenge']];
-  const turns = [...flow.matchAll(/Client:\s*'(.*?)'\s*(?:\[[^\]]*\]\s*)?(?=->|$)/g)].map((m) => m[1].trim());
-  const expected = Object.fromEntries(
-    expectedRaw.split('|').map((kv) => kv.trim()).filter(Boolean).map((kv) => {
-      const i = kv.indexOf(':');
-      return [kv.slice(0, i).trim(), kv.slice(i + 1).trim()];
-    }),
-  );
-  const sup = SUPPLEMENTS[id] ?? { followups: [] };
-  const split = sup.postQuoteFrom ?? turns.length;
-  const checks = { ...(sup.checks ?? {}) };
-  // When the scenario ends in a human takeover the AI is deliberately silent, so only the takeover state is asserted.
-  if (expected['Automation State']) checks['automation_mode'] = expected['Automation State'];
-  else if (expected['Form Factor']) {
-    checks['construction_type'] = expected['Form Factor'];
-    // category isolation: wallets & card holders are SMALL_GOODS, everything else in the CSV is a BAG
-    checks['category'] = /WALLET|CARD_HOLDER/.test(expected['Form Factor']) ? 'SMALL_GOODS' : 'BAG';
-  }
-  if (expected['Escalation Trigger']) checks['escalation_reason'] = expected['Escalation Trigger'] === 'CLIENT_REQUESTED_HUMAN' ? 'CLIENT_REQUEST' : expected['Escalation Trigger'];
+  const id = get(r, 'id');
+  const script = SCRIPT[id] ?? { followups: [DONE, DONE] };
+  const refOrDim = get(r, 'expected_reference_or_dim');
+  const dims = /^(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)(?:\s*x\s*(\d+(?:[.,]\d+)?))?\s*cm$/i.exec(refOrDim);
+  const unspecified = !refOrDim || /^unspecified$/i.test(refOrDim);
+  const escalation = get(r, 'expected_escalation_reason');
+  const notes = get(r, 'notes');
   return {
     id,
-    category: r[col['Kategori Produk']].trim(),
-    model: r[col['Model/Silhouette']].trim(),
-    inbound_type: r[col['Tipe Inbound Client']].trim(),
-    needs_attachment: /foto|sketsa/i.test(r[col['Tipe Inbound Client']]),
-    client_turns: turns.slice(0, split),
-    followup_turns: sup.followups,
-    post_quote_turns: turns.slice(split),
-    expected_summary: expectedRaw,
-    checks,
+    name: get(r, 'scenario_name'),
+    category: CATEGORY[get(r, 'category')] ?? 'CUSTOM_GENERIC',
+    input_type: get(r, 'client_input_type'),
+    needs_attachment: /sketch|photo|foto/i.test(get(r, 'client_input_type')),
+    message: get(r, 'client_raw_message'),
+    notes,
+    expected: {
+      category: CATEGORY[get(r, 'category')] ?? 'CUSTOM_GENERIC',
+      // the CSV fills dimension_mode even where the size is "Unspecified"; those rows don't assert it
+      dimension_mode: unspecified ? null : get(r, 'expected_dimension_mode'),
+      dims: dims ? [dims[1], dims[2], dims[3]].filter(Boolean).map((n) => Number(n.replace(',', '.'))) : null,
+      reference: !unspecified && !dims && get(r, 'expected_dimension_mode') === 'REFERENCE_BASED' ? refOrDim : null,
+      material_status: get(r, 'expected_material_status') || null,
+      automation_mode: get(r, 'expected_automation_mode') || null,
+      escalation_reason: !escalation || escalation === 'NONE' ? null : escalation,
+      debounce_bypass: /bypass/i.test(notes) || /bypass/i.test(get(r, 'scenario_name')),
+    },
+    expected_summary: [get(r, 'expected_dimension_mode'), refOrDim, get(r, 'expected_material_status'), get(r, 'expected_automation_mode'), escalation].join(' · '),
+    steps: [
+      ...(script.setup ?? []).map((s) => ({ ...s, phase: 'setup' })),
+      { as: 'CLIENT', text: get(r, 'client_raw_message'), phase: 'scenario' },
+      ...(script.followups ?? []).map((t) => ({ as: 'CLIENT', text: t, phase: 'followup' })),
+    ],
   };
 });
 
 writeFileSync(new URL('../src/lib/data/scenarios.json', import.meta.url), JSON.stringify(scenarios, null, 2) + '\n');
 console.log(`Wrote ${scenarios.length} scenarios to src/lib/data/scenarios.json`);
-for (const s of scenarios) console.log(`  ${s.id}  turns=${s.client_turns.length}${s.post_quote_turns.length ? `+${s.post_quote_turns.length}` : ''}  ${s.checks.construction_type ?? ''}`);
+for (const s of scenarios) console.log(`  ${s.id}  ${s.category.padEnd(12)} steps=${s.steps.length}  ${s.expected_summary}`);

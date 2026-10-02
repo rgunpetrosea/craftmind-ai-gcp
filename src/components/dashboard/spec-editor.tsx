@@ -19,7 +19,14 @@ import {
   topicsFor,
 } from '@/lib/spec/catalog';
 import { GROUP_LABEL, type AnyField, type FieldGroup } from '@/lib/spec/fields';
-import type { AttributeValue, ConstructionType, CraftCategory, CustomField, Dimensions, OrderPayload, Specifications } from '@/lib/types';
+import type { AttributeValue, ConstructionType, CraftCategory, CustomField, DimensionMode, Dimensions, OrderPayload, Specifications } from '@/lib/types';
+
+const DIMENSION_MODE_LABEL: Record<DimensionMode, string> = {
+  UNSPECIFIED: '— not discussed —',
+  EXACT_CM: 'Exact cm',
+  REFERENCE_BASED: 'Inferred from a reference',
+  PENDING_SITE_VISIT: 'Pending site visit',
+};
 import { cn } from '@/lib/utils/cn';
 
 const inputCls =
@@ -238,6 +245,45 @@ export function SpecEditor({
           </label>
         </div>
 
+        {/* Where the size comes from */}
+        {'dimensions_cm' in schema.fields && (
+          <div className="grid gap-3 rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200 sm:grid-cols-3">
+            <label className="block text-sm">
+              <Label>Size basis</Label>
+              <select
+                className={inputCls}
+                disabled={locked}
+                value={spec.dimension_mode}
+                onChange={(e) => update((s) => void (s.dimension_mode = e.target.value as DimensionMode))}
+              >
+                {(Object.keys(DIMENSION_MODE_LABEL) as DimensionMode[]).map((m) => (
+                  <option key={m} value={m}>
+                    {DIMENSION_MODE_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {spec.dimension_mode === 'REFERENCE_BASED' && (
+              <label className="block text-sm sm:col-span-2">
+                <Label>Reference object</Label>
+                <input
+                  className={inputCls}
+                  disabled={locked}
+                  value={spec.reference_object}
+                  placeholder="e.g. Hermès Birkin 30, iPad Air 11 inch"
+                  onChange={(e) => update((s) => void (s.reference_object = e.target.value))}
+                />
+              </label>
+            )}
+            {spec.dimension_mode === 'PENDING_SITE_VISIT' && (
+              <p className="self-end text-xs text-stone-600 sm:col-span-2">
+                Size will be measured on site. The quote uses the form factor&apos;s typical size and includes the site-visit fee; update the
+                dimensions after the visit and recalculate.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Category fields, grouped */}
         {groups.map(({ group, keys }) => (
           <fieldset key={group}>
@@ -252,7 +298,18 @@ export function SpecEditor({
                       {field.label}
                       {field.type === 'dimensions' && field.unit ? ` (${field.unit})` : ''}
                     </Label>
-                    <FieldInput field={field} value={attrs(spec)[key]} disabled={locked} onChange={(v) => setAttr(key, v)} />
+                    <FieldInput
+                      field={field}
+                      value={attrs(spec)[key]}
+                      disabled={locked}
+                      onChange={(v) =>
+                        update((s) => {
+                          attrs(s)[key] = v;
+                          // centimetres typed by the crafter are confirmed sizes
+                          if (key === 'dimensions_cm') s.dimension_mode = 'EXACT_CM';
+                        })
+                      }
+                    />
                   </label>
                 );
               })}

@@ -2,14 +2,17 @@
 
 import {
   Bot,
+  Camera,
   CheckCircle2,
   Hand,
+  Images,
   Loader2,
   MessagesSquare,
   PackageCheck,
   PackageSearch,
   PauseCircle,
   RefreshCw,
+  RotateCcw,
   Ruler,
   Send,
   Sparkles,
@@ -26,7 +29,8 @@ import type { QuotationBreakdown } from '@/lib/agents/pricing';
 import { postJson, usePoll } from '@/lib/hooks/use-poll';
 import { schemaOf } from '@/lib/spec/catalog';
 import { primaryMaterial } from '@/lib/spec/describe';
-import type { AutomationMode, ChatMessage, InventoryItem, OrderPayload, Specifications } from '@/lib/types';
+import { angleDef, MOCKUP_ANGLES } from '@/lib/spec/angles';
+import type { AutomationMode, ChatMessage, InventoryItem, MockupAngle, OrderPayload, Specifications } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/format';
 import { BomTable } from './bom-table';
@@ -38,6 +42,7 @@ interface DetailResponse {
   messages: ChatMessage[];
   breakdown: QuotationBreakdown | null;
   allocated_stock: InventoryItem | null;
+  rendering_angles: boolean;
 }
 
 const ENGINE_LABEL = { 'gemini-image': 'Gemini image model', imagen: 'Imagen', 'offline-svg': 'Offline concept (no AI image)' } as const;
@@ -50,6 +55,9 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
   const [reply, setReply] = useState('');
   const [flash, setFlash] = useState<string | null>(null);
   const [feedback, setFeedback] = useState('');
+  const [selectedAngle, setSelectedAngle] = useState<MockupAngle>('ANGLE_1');
+  const [sendAngles, setSendAngles] = useState<Set<MockupAngle> | null>(null);
+  const [shotDrafts, setShotDrafts] = useState<Partial<Record<MockupAngle, string>>>({});
 
   if (error && !data) return <p className="p-6 text-sm text-red-600">{error}</p>;
   if (!data) {
@@ -86,12 +94,35 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
   const recalculate = (spec: Specifications) =>
     act('recalc', () => postJson(`/api/orders/${orderId}/recalculate`, { specifications: spec }), 'Specification saved — BOM, SqFt, labor and quotation recalculated');
 
-  const regenerateMockup = (withFeedback: boolean) =>
+  const renders = order.media_assets.mockup_angles ?? [];
+  const renderOf = (angle: MockupAngle) => renders.find((r) => r.angle === angle);
+  const selected = renderOf(selectedAngle);
+  const rendering = data.rendering_angles;
+  // angles ticked for the client; defaults to every rendered angle
+  const sendSet = sendAngles ?? new Set(renders.map((r) => r.angle));
+
+  const viewOf = (angle: MockupAngle) => angleDef(s.category, angle, s.construction_type);
+  const savedPrompt = order.media_assets.angle_prompts?.[selectedAngle] ?? '';
+  const shotDraft = shotDrafts[selectedAngle] ?? savedPrompt;
+
+  const renderAngles = (angles: MockupAngle[], withFeedback: boolean, shot?: { custom?: string; clear?: boolean }) =>
     act(
-      'mockup',
-      () => postJson<{ engine: keyof typeof ENGINE_LABEL; note?: string }>('/api/ai/mock-generator', { order_id: orderId, adjustment: withFeedback ? feedback : undefined }),
-      (r) => r.note ?? `Mockup re-generated with ${ENGINE_LABEL[r.engine]}${withFeedback ? ' using your feedback' : ''}`,
-    ).then((ok) => ok && withFeedback && setFeedback(''));
+      shot ? 'mockup-shot' : angles.length > 1 ? 'mockup-all' : 'mockup',
+      () =>
+        postJson<{ renders: Array<{ angle: MockupAngle; engine: keyof typeof ENGINE_LABEL }>; note?: string }>('/api/ai/mock-generator', {
+          order_id: orderId,
+          ...(angles.length === 1 ? { angle_index: MOCKUP_ANGLES.indexOf(angles[0]) + 1 } : { angles }),
+          adjustment: withFeedback ? feedback : undefined,
+          custom_angle_prompt: shot?.custom,
+          clear_custom_prompt: shot?.clear,
+        }),
+      (r) =>
+        r.note ??
+        `${r.renders.length} angle(s) rendered with ${ENGINE_LABEL[r.renders[0]?.engine ?? 'gemini-image']}${withFeedback ? ' using your feedback' : ''}${shot?.custom ? ' using your custom shot' : shot?.clear ? ' with the default shot' : ''}`,
+    ).then((ok) => {
+      if (ok && withFeedback) setFeedback('');
+      if (ok && shot) setShotDrafts(({ [angles[0]]: _done, ...rest }) => (void _done, rest));
+    });
 
   const setMode = (mode: AutomationMode, label: string) =>
     act(mode, () => postJson(`/api/orders/${orderId}/takeover`, { mode }), label);
@@ -110,6 +141,9 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
               <AutomationBadge order={order} />
               {order.escalation_reason && <Badge tone="neutral">{ESCALATION_LABEL[order.escalation_reason]}</Badge>}
             </div>
+            {order.escalation_note && order.automation_mode !== 'AI_COPILOT' && (
+              <p className="mt-2 rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-800 ring-1 ring-red-200">🔔 {order.escalation_note}</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {order.automation_mode !== 'FULL_MANUAL' && (
@@ -141,23 +175,110 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
         {flash && <p className="mt-3 rounded-md bg-stone-50 px-3 py-2 text-xs text-stone-600">{flash}</p>}
       </Card>
 
-      {/* Side-by-side review + mockup feedback */}
+      {/* Multi-angle studio mockups + feedback */}
       <Card>
         <CardHeader
-          title="Sketch → AI studio mockup"
+          title="Sketch → AI studio mockups"
           icon={<Sparkles className="h-4 w-4 text-leather-500" />}
           action={
-            order.media_assets.mockup_engine && (
-              <Badge tone={order.media_assets.mockup_engine === 'offline-svg' ? 'amber' : 'green'}>{ENGINE_LABEL[order.media_assets.mockup_engine]}</Badge>
-            )
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!!busy || s.construction_type === 'UNSPECIFIED' || order.session_state === 'APPROVED'}
+              onClick={() => renderAngles(MOCKUP_ANGLES, false)}
+            >
+              {busy === 'mockup-all' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Images className="h-3.5 w-3.5" />} Render all angles
+            </Button>
           }
         />
         <div className="space-y-4 p-4">
-          <SideBySidePreview sketchUrl={order.media_assets.original_sketch_url} mockupUrl={order.media_assets.ai_generated_mockup_url} />
+          {/* angle tabs */}
+          <div role="tablist" aria-label="Mockup angles" className="flex flex-wrap gap-1.5">
+            {MOCKUP_ANGLES.map((angle, i) => {
+              const r = renderOf(angle);
+              const active = angle === selectedAngle;
+              return (
+                <button
+                  key={angle}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setSelectedAngle(angle)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ring-1 transition',
+                    active ? 'bg-leather-700 text-white ring-leather-700' : 'bg-white text-stone-700 ring-stone-300 hover:bg-stone-50',
+                  )}
+                >
+                  {rendering && !r ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <span className={cn('h-2 w-2 rounded-full', !r ? 'bg-stone-300' : r.engine === 'offline-svg' ? 'bg-amber-400' : 'bg-emerald-500')} />
+                  )}
+                  Angle {i + 1} · {viewOf(angle).label}
+                  {order.media_assets.angle_prompts?.[angle] && <span className="rounded bg-sky-100 px-1 text-[9px] font-semibold text-sky-800">custom</span>}
+                </button>
+              );
+            })}
+            {selected && (
+              <Badge tone={selected.engine === 'offline-svg' ? 'amber' : 'green'} className="ml-auto self-center">
+                {ENGINE_LABEL[selected.engine]}
+              </Badge>
+            )}
+          </div>
+
+          {selected?.engine === 'offline-svg' && selected.error && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+              <b>Why no AI render:</b> {selected.error}
+            </p>
+          )}
+          <SideBySidePreview
+            sketchUrl={order.media_assets.original_sketch_url}
+            mockupUrl={selected?.url}
+            mockupLabel={`Angle ${MOCKUP_ANGLES.indexOf(selectedAngle) + 1} · ${selected?.custom_prompt ? 'Custom shot' : viewOf(selectedAngle).label}`}
+            mockupEmpty={
+              rendering
+                ? 'Rendering this angle in the background…'
+                : s.construction_type === 'UNSPECIFIED'
+                  ? 'Mockups appear once the spec is complete'
+                  : 'Not rendered yet — use "Render this angle" below'
+            }
+          />
+
+          {/* custom shot direction for this angle */}
+          <div className="rounded-lg bg-sky-50/60 p-3 ring-1 ring-sky-200">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-700" htmlFor="shot-override">
+              <Camera className="h-3.5 w-3.5 text-sky-700" /> Custom shot direction / prompt override · Angle {MOCKUP_ANGLES.indexOf(selectedAngle) + 1}
+            </label>
+            <input
+              id="shot-override"
+              value={shotDraft}
+              onChange={(e) => setShotDrafts((d) => ({ ...d, [selectedAngle]: e.target.value }))}
+              disabled={order.session_state === 'APPROVED'}
+              placeholder={`Default: ${viewOf(selectedAngle).shot}`}
+              className="mt-2 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-sky-500"
+            />
+            <p className="mt-1 text-[11px] text-stone-500">
+              The order&apos;s spec JSON (materials, colours, stitching) is always sent first; this replaces only the camera / shot. Saved for this angle
+              until you reset it.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                disabled={!!busy || !shotDraft.trim() || s.construction_type === 'UNSPECIFIED' || order.session_state === 'APPROVED'}
+                onClick={() => renderAngles([selectedAngle], false, { custom: shotDraft })}
+              >
+                {busy === 'mockup-shot' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />} Re-render angle with custom prompt
+              </Button>
+              {savedPrompt && (
+                <Button variant="ghost" size="sm" disabled={!!busy || order.session_state === 'APPROVED'} onClick={() => renderAngles([selectedAngle], false, { clear: true })}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset to default shot ({viewOf(selectedAngle).label})
+                </Button>
+              )}
+            </div>
+          </div>
 
           <div className="rounded-lg bg-stone-50 p-3 ring-1 ring-stone-200">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-700" htmlFor="mockup-feedback">
-              <Wand2 className="h-3.5 w-3.5 text-leather-500" /> Prompt adjustment
+              <Wand2 className="h-3.5 w-3.5 text-leather-500" /> Edit feedback · Angle {MOCKUP_ANGLES.indexOf(selectedAngle) + 1}
             </label>
             <textarea
               id="mockup-feedback"
@@ -169,17 +290,26 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
               className="mt-2 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500"
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button size="sm" disabled={!!busy || !feedback.trim() || !s.construction_type || s.construction_type === 'UNSPECIFIED'} onClick={() => regenerateMockup(true)}>
-                {busy === 'mockup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Re-generate mockup with feedback
+              <Button
+                size="sm"
+                disabled={!!busy || !feedback.trim() || s.construction_type === 'UNSPECIFIED' || order.session_state === 'APPROVED'}
+                onClick={() => renderAngles([selectedAngle], true)}
+              >
+                {busy === 'mockup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Re-generate this angle with feedback
               </Button>
-              <Button variant="ghost" size="sm" disabled={!!busy || s.construction_type === 'UNSPECIFIED'} onClick={() => regenerateMockup(false)}>
-                <RefreshCw className="h-3.5 w-3.5" /> Re-render as is
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!!busy || s.construction_type === 'UNSPECIFIED' || order.session_state === 'APPROVED'}
+                onClick={() => renderAngles([selectedAngle], false)}
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> {selected ? 'Re-render this angle' : 'Render this angle'}
               </Button>
               <span className="text-[11px] text-stone-500">Only the mockup changes; the specification, BOM and quote stay as they are.</span>
             </div>
-            {order.media_assets.mockup_feedback?.length ? (
+            {selected?.feedback?.length ? (
               <ul className="mt-2 flex flex-wrap gap-1.5">
-                {order.media_assets.mockup_feedback.map((f, i) => (
+                {selected.feedback.map((f, i) => (
                   <li key={i}>
                     <button type="button" onClick={() => setFeedback(f)} title="Reuse this feedback" className="rounded-full bg-white px-2.5 py-0.5 text-[11px] text-stone-600 ring-1 ring-stone-200 hover:bg-stone-100">
                       {i + 1}. {f.length > 50 ? `${f.slice(0, 48)}…` : f}
@@ -252,6 +382,7 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
                     ['Sourcing', breakdown.sourcing_idr],
                     ['Personalization', breakdown.personalization_idr],
                     ['Custom requests', breakdown.custom_requests_idr],
+                    ['Site visit', breakdown.site_visit_idr],
                     ['Margin', breakdown.margin_idr],
                   ] as const
                 ).map(([label, v]) => (
@@ -272,6 +403,11 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
             {order.session_state === 'APPROVED' ? (
               <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-3 font-medium text-emerald-800 ring-1 ring-emerald-200">
                 <CheckCircle2 className="h-4 w-4" /> Approved at {formatIDR(bom.suggested_quotation_idr)} — quotation sent via WhatsApp
+                {order.media_assets.approved_angles?.length ? (
+                  <a href={`/gallery/${order.order_id}`} target="_blank" rel="noreferrer" className="ml-auto text-xs underline">
+                    {order.media_assets.approved_angles.length} mockup angle(s) · client gallery
+                  </a>
+                ) : null}
               </div>
             ) : (
               <>
@@ -291,18 +427,62 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
                   rows={2}
                   className="w-full rounded-lg px-3 py-2 ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500"
                 />
+                <fieldset>
+                  <legend className="text-[11px] uppercase tracking-wide text-stone-500">Mockups to send with the quote</legend>
+                  {renders.length ? (
+                    <div className="mt-1.5 grid grid-cols-3 gap-2">
+                      {MOCKUP_ANGLES.map((angle, i) => {
+                        const r = renderOf(angle);
+                        if (!r) return null;
+                        const on = sendSet.has(angle);
+                        return (
+                          <label
+                            key={angle}
+                            className={cn('cursor-pointer overflow-hidden rounded-lg ring-2 transition', on ? 'ring-leather-600' : 'opacity-50 ring-stone-200')}
+                          >
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={on}
+                              onChange={() => {
+                                const next = new Set(sendSet);
+                                if (on) next.delete(angle);
+                                else next.add(angle);
+                                setSendAngles(next);
+                              }}
+                            />
+                            {/* eslint-disable-next-line @next/next/no-img-element -- data URLs / GCS objects */}
+                            <img src={r.url} alt={viewOf(angle).label} className="aspect-square w-full bg-stone-100 object-cover" />
+                            <span className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-stone-700">
+                              {on ? <CheckCircle2 className="h-3 w-3 text-leather-600" /> : <span className="h-3 w-3 rounded-full ring-1 ring-stone-300" />}
+                              {i + 1}. {viewOf(angle).label}
+                              {r.engine === 'offline-svg' && <span className="text-amber-600"> · concept</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-stone-500">No mockup rendered yet: the quote is sent as text only.</p>
+                  )}
+                </fieldset>
                 <Button
                   className="w-full"
                   disabled={!!busy || !bom.components_breakdown.length}
                   onClick={() =>
                     act(
                       'approve',
-                      () => postJson(`/api/orders/${orderId}/approve`, { quotation_idr: Number(quoteValue) || undefined, note }),
-                      'Quotation approved and sent to client',
+                      () =>
+                        postJson<{ sent_angles: MockupAngle[] }>(`/api/orders/${orderId}/approve`, {
+                          quotation_idr: Number(quoteValue) || undefined,
+                          note,
+                          angles: [...sendSet],
+                        }),
+                      (r) => `Quotation approved and sent to client with ${r.sent_angles.length} mockup angle(s)`,
                     )
                   }
                 >
-                  {busy === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Approve & send quotation
+                  {busy === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Approve & send formal quote{sendSet.size ? ` + ${sendSet.size} mockup${sendSet.size > 1 ? 's' : ''}` : ''}
                 </Button>
               </>
             )}
@@ -312,7 +492,7 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
         {/* Conversation + crafter reply */}
         <Card className="flex flex-col">
           <CardHeader title="WhatsApp conversation" icon={<MessagesSquare className="h-4 w-4 text-leather-500" />} />
-          <div className="max-h-80 flex-1 space-y-2 overflow-y-auto p-4">
+          <div className="max-h-[min(750px,75vh)] min-h-48 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
             {messages.map((m) => (
               <div
                 key={m.id}

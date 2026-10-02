@@ -68,7 +68,7 @@ export const FOOTWEAR: CategorySchema<'FOOTWEAR'> = {
       description: 'e.g. "plain toe", "cap toe", "wingtip / brogue".',
       parse: (t) => /(cap toe|plain toe|wingtip|brogue|medallion)/i.exec(t)?.[1],
     },
-    lining: { type: 'text', label: 'Lining', label_id: 'Lining', group: 'material', description: 'Lining material, usually calf leather.', parse: parseLining },
+    lining: { type: 'text', zone: 'interior', label: 'Lining', label_id: 'Lining', group: 'material', description: 'Lining material, usually calf leather.', parse: parseLining },
     outsole_type: {
       type: 'enum',
       label: 'Outsole',
