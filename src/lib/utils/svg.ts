@@ -1,6 +1,7 @@
 import { constructionDef, describeFields } from '@/lib/spec/catalog';
 import { primaryMaterial } from '@/lib/spec/describe';
-import type { Specifications } from '@/lib/types';
+import { angleDef, type AngleView } from '@/lib/spec/angles';
+import type { MockupAngle, Specifications } from '@/lib/types';
 import { svgToDataUrl } from '@/lib/utils/format';
 
 const LEATHER_COLORS: Array<[RegExp, string, string]> = [
@@ -80,7 +81,8 @@ function productShape(spec: Specifications, base: string, shade: string, stitch:
  * Deterministic concept render used when Gemini image generation is unavailable (no key, quota, offline demo).
  * Shape follows the category and form factor; free-text feedback cannot be applied.
  */
-export function renderConceptSvg(spec: Specifications): string {
+export function renderConceptSvg(spec: Specifications, angle: MockupAngle = 'ANGLE_1'): string {
+  const view = angleDef(spec.category, angle, spec.construction_type);
   const a = spec.attributes as unknown as Record<string, unknown>;
   const material = primaryMaterial(spec);
   const { base, shade } = leatherPalette(`${material} ${a.color ?? a.color_stain ?? ''}`);
@@ -95,12 +97,27 @@ export function renderConceptSvg(spec: Specifications): string {
   </defs>
   <rect width="680" height="600" fill="url(#bg)"/>
   <ellipse cx="340" cy="485" rx="230" ry="18" fill="#000" opacity=".12"/>
-  ${productShape(spec, base, shade, '#f1e3cf')}
+  ${angleView(view, productShape(spec, base, shade, '#f1e3cf'), shade)}
   <text x="340" y="535" text-anchor="middle" font-family="Georgia, serif" font-size="20" fill="#3d241a">${escapeXml(title)}</text>
   <text x="340" y="562" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#6e3f26">${escapeXml(material || 'Material TBD')}${subtitle ? ` · ${escapeXml(subtitle)}` : ''}</text>
-  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#a8683a" letter-spacing="2">CRAFTMIND AI · CONCEPT RENDER (OFFLINE)</text>
+  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#a8683a" letter-spacing="2">CRAFTMIND AI · CONCEPT RENDER (OFFLINE) · ${escapeXml(view.label.toUpperCase())}</text>
 </svg>`;
   return svgToDataUrl(svg);
+}
+
+/** Offline stand-ins per view scope: whole product, opened interior, macro crop (side views are compressed). */
+function angleView(view: AngleView, product: string, shade: string): string {
+  if (view.scope === 'DETAIL') {
+    // zoom into the lower-right corner of the product (edge + stitch line)
+    return `<svg x="40" y="40" width="600" height="440" viewBox="300 300 240 176" preserveAspectRatio="xMidYMid slice">${product}</svg>`;
+  }
+  if (view.scope === 'INTERIOR') {
+    const pockets = [0, 1, 2].map((i) => `<rect x="${250 + i * 64}" y="290" width="56" height="70" rx="4" fill="${shade}" opacity=".35"/>`).join('');
+    return `${product}<rect x="232" y="262" width="216" height="150" rx="10" fill="#efe3cc" opacity=".95"/>${pockets}<rect x="240" y="270" width="200" height="134" rx="8" fill="none" stroke="${shade}" stroke-width="1.5" stroke-dasharray="5 4" opacity=".7"/>`;
+  }
+  if (/SIDE|LATERAL/.test(view.view)) return `<g transform="translate(340 0) scale(0.45 1) translate(-340 0)">${product}</g>`;
+  if (/TOP_DOWN/.test(view.view)) return `<g transform="translate(0 300) scale(1 0.6) translate(0 -300)">${product}</g>`;
+  return product;
 }
 
 /** Pencil-style rough sketch used for the seeded demo order. */

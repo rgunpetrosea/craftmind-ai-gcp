@@ -42,6 +42,7 @@ export function OrderCard({ row, selected, onSelect }: { row: OrderRow; selected
           </span>
         )}
       </div>
+      {order.escalation_note && order.automation_mode !== 'AI_COPILOT' && <p className="mt-2 line-clamp-2 text-[11px] font-medium text-red-700">🔔 {order.escalation_note}</p>}
       {row.last_message && (
         <p className="mt-2 line-clamp-1 text-[11px] text-stone-500">
           <span className="font-medium">{row.last_message.sender.toLowerCase()}:</span> {row.last_message.text}

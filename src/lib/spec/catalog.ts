@@ -9,6 +9,7 @@ import type {
   ConstructionType,
   CraftCategory,
   CustomField,
+  DimensionMode,
   Dimensions,
   IntakeProgress,
   Specifications,
@@ -37,8 +38,9 @@ export interface LooseSchema {
   topics: Array<Omit<TopicDef<CraftCategory>, 'fields' | 'is_filled' | 'applies_to'> & { fields: string[]; applies_to?: string[]; is_filled?: (s: Specifications) => boolean }>;
 }
 
+/** Unknown / legacy category ids (e.g. 'bespoke_wallet' from old data) fall back to CUSTOM_GENERIC instead of crashing. */
 export function schemaOf(category: CraftCategory): LooseSchema {
-  return CATEGORY_SCHEMAS[category] as unknown as LooseSchema;
+  return (CATEGORY_SCHEMAS[category] ?? CATEGORY_SCHEMAS.CUSTOM_GENERIC) as unknown as LooseSchema;
 }
 
 export const attrs = (spec: Specifications) => spec.attributes as unknown as Record<string, AttributeValue>;
@@ -150,6 +152,8 @@ export function emptySpecifications(category: CraftCategory = 'CUSTOM_GENERIC'):
     construction_type: 'UNSPECIFIED',
     model_name: '',
     notes: '',
+    dimension_mode: 'UNSPECIFIED',
+    reference_object: '',
     attributes: blankAttributes(category),
     custom_fields: [],
   } as unknown as Specifications;
@@ -168,6 +172,8 @@ export function isFieldRelevant(spec: Specifications, key: string): boolean {
 // ---------------------------------------------------------------------------
 // Normalization, legacy migration, category switching
 // ---------------------------------------------------------------------------
+
+export const DIMENSION_MODES: DimensionMode[] = ['UNSPECIFIED', 'EXACT_CM', 'REFERENCE_BASED', 'PENDING_SITE_VISIT'];
 
 const LEGACY_CATEGORY: Record<string, CraftCategory> = { bespoke_wallet: 'SMALL_GOODS', bespoke_bag: 'BAG', bespoke_shoes: 'FOOTWEAR' };
 
@@ -231,6 +237,8 @@ export function normalizeSpecifications(raw: unknown, legacyCategory?: string): 
     construction_type: categoryOfConstruction(construction) === category ? construction : 'UNSPECIFIED',
     model_name: typeof r.model_name === 'string' ? r.model_name : '',
     notes: typeof r.notes === 'string' ? r.notes : '',
+    dimension_mode: (DIMENSION_MODES as string[]).includes(r.dimension_mode as string) ? (r.dimension_mode as DimensionMode) : 'UNSPECIFIED',
+    reference_object: typeof r.reference_object === 'string' ? r.reference_object : '',
     attributes,
     custom_fields: Array.isArray(r.custom_fields) ? (r.custom_fields as CustomField[]).filter((f) => f && f.label?.trim()) : [],
   } as unknown as Specifications;
@@ -272,6 +280,8 @@ export function topicsFor(spec: Specifications): LooseTopic[] {
 
 export function isTopicFilled(spec: Specifications, topic: LooseTopic, progress?: Pick<IntakeProgress, 'deferred_topics'>): boolean {
   if (topic.deferrable && progress?.deferred_topics?.includes(`${spec.category}:${topic.id}`)) return true;
+  // Size is settled for now when it will be measured on site.
+  if (topic.id === 'size' && spec.dimension_mode === 'PENDING_SITE_VISIT') return true;
   if (topic.is_filled) return topic.is_filled(spec);
   return topic.fields.some((f) => isFieldSet(spec, f));
 }
@@ -378,10 +388,11 @@ export function finalizeSpecifications(spec: Specifications, presetDefaults: Par
     for (const k of topic.fields) if (cDefaults[k] !== undefined) a[k] = structuredClone(cDefaults[k]);
   }
 
-  if (out.category === 'BAG' && !isFieldSet(out, 'dimensions_cm') && (a.laptop_size_inch as number) > 0) {
-    const inch = a.laptop_size_inch as number;
-    const diag = inch * 2.54;
-    a.dimensions_cm = { length: Math.round(0.915 * diag + 4), width: 10, height: Math.round(0.63 * diag + 4) };
+  // Fill axes the client left out (e.g. a card holder given as "9.5x7cm" gets the form factor's typical depth).
+  const cd = cDefaults.dimensions_cm as Dimensions | undefined;
+  const d = a.dimensions_cm as Dimensions | undefined;
+  if (cd && d && (d.length > 0 || d.height > 0)) {
+    a.dimensions_cm = { length: d.length || cd.length, width: d.width || cd.width, height: d.height || cd.height };
   }
 
   for (const [key, field] of Object.entries(schema.fields)) {

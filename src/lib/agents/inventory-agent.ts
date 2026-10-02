@@ -36,12 +36,16 @@ const COLOR_SYNONYMS: Array<[string, RegExp]> = [
   ['brown', /brown|coklat|cokelat/i],
 ];
 
-/** Special-sourcing fee and extra lead time. UNKNOWN = not stocked at all: assume a local tannery can supply it. */
+/** Special-sourcing fee and extra lead time. UNKNOWN = not stocked at all: assume a local supplier can provide it. */
 export const SOURCING_RULES = {
   LOCAL: { fee_idr: 70_000, lead_days: 5 },
   IMPORT: { fee_idr: 450_000, lead_days: 14 },
   UNKNOWN: { fee_idr: 70_000, lead_days: 5 },
+  /** CITES-documented exotic skins from specialist tanneries. */
+  EXOTIC: { fee_idr: 1_500_000, lead_days: 30 },
 } as const;
+
+const EXOTIC = /croc|buaya|alligator|python|ular|ostrich|burung unta|lizard|biawak|stingray|ikan pari|shagreen/i;
 
 export interface InventoryMatch {
   sourcing: MaterialSourcing;
@@ -92,8 +96,8 @@ export function matchInventory(
     };
   }
 
-  // Known material but not enough on the shelf → restock from the same supplier.
-  const rule = best ? SOURCING_RULES[best.origin] : SOURCING_RULES.UNKNOWN;
+  // Known material but not enough on the shelf → restock from the same supplier; exotics go through a specialist.
+  const rule = EXOTIC.test(material) ? SOURCING_RULES.EXOTIC : best ? SOURCING_RULES[best.origin] : SOURCING_RULES.UNKNOWN;
   return {
     sourcing: {
       status: 'SPECIAL_SOURCING_NEEDED',

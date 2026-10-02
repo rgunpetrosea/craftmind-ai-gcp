@@ -24,6 +24,7 @@ export const FURNITURE: CategorySchema<'FURNITURE'> = {
     { id: 'CHAIR', label: 'Chair', detect: /kursi|chair/i, vision_cue: 'Single seat with backrest.', defaults: { dimensions_cm: { length: 45, width: 50, height: 85 } }, labor_factor: 0.6 },
     { id: 'SHELF', label: 'Shelf / bookcase', detect: /rak|shelf|bookcase/i, vision_cue: 'Open shelving with vertical sides and horizontal shelves.', defaults: { dimensions_cm: { length: 80, width: 30, height: 180 } }, labor_factor: 0.9 },
     { id: 'CABINET', label: 'Cabinet / sideboard', detect: /lemari|bufet|buffet|kabinet|cabinet|sideboard/i, vision_cue: 'Closed carcass with doors and/or drawers.', defaults: { dimensions_cm: { length: 150, width: 45, height: 80 } }, labor_factor: 1.4 },
+    { id: 'NIGHTSTAND', label: 'Nightstand / bedside table', detect: /nakas|bedside|night ?stand|meja (samping|sebelah) (tempat tidur|ranjang|kasur)/i, vision_cue: 'Small bedside cabinet ~50–60 cm high with a drawer and/or shelf.', defaults: { dimensions_cm: { length: 50, width: 40, height: 55 } }, labor_factor: 0.6 },
     { id: 'BED_FRAME', label: 'Bed frame', detect: /ranjang|dipan|tempat tidur|bed/i, vision_cue: 'Frame with headboard, side rails and slats.', defaults: { dimensions_cm: { length: 210, width: 170, height: 100 } }, labor_factor: 1.5 },
     { id: 'OTHER_FURNITURE', label: 'Other furniture', detect: /(?!)/, vision_cue: 'Any other furniture.', defaults: {}, labor_factor: 1 },
   ],
@@ -120,7 +121,7 @@ export const FURNITURE: CategorySchema<'FURNITURE'> = {
   },
   topics: [
     { id: 'construction', label: 'Jenis', ask: 'jenis furnitur (mis. meja makan, kursi, rak, lemari)', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
-    { id: 'size', label: 'Ukuran', ask: 'ukuran P x L x T (cm)', required: true, fields: ['dimensions_cm'], deferrable: false },
+    { id: 'size', label: 'Ukuran', ask: 'ukuran P x L x T (cm); kalau harus pas dengan ruangan, kami bisa jadwalkan survei ukur ke lokasi', required: true, fields: ['dimensions_cm'], deferrable: false },
     { id: 'material', label: 'Bahan', ask: 'jenis kayu / besi (mis. jati grade A, mahoni, walnut, besi hollow)', required: true, fields: ['primary_material'], deferrable: false },
     { id: 'finish', label: 'Finishing', ask: 'finishing yang diinginkan (natural oil, PU varnish, duco) dan warnanya', required: false, fields: ['finish_coating'], deferrable: true },
     { id: 'joinery', label: 'Sambungan', ask: 'tipe sambungan (purus/mortise-tenon untuk dirakit permanen, atau knock-down supaya mudah dikirim)', required: false, fields: ['joinery_type'], deferrable: true },

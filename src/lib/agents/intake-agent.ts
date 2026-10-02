@@ -17,9 +17,22 @@ import {
   visionGuide,
   type ConversationPlan,
 } from '@/lib/spec/catalog';
+import { resolveDimensionSource } from '@/lib/spec/dimensions';
 import { classificationSchema, extractionSchema } from '@/lib/spec/gemini-schema';
+import { referenceGuide } from '@/lib/spec/references';
+import { findGlossary, NON_STANDARD, PRICE_OR_TIMELINE, QUESTION, REQUEST_AS_QUESTION, withoutExplanationQuestions } from '@/lib/spec/glossary';
 import { DECLINE, FINISHED, num } from '@/lib/spec/parsers';
-import type { AttributeValue, ChatMessage, ConstructionType, CraftCategory, IntakeProgress, IntakeResult, Specifications } from '@/lib/types';
+import type {
+  AttributeValue,
+  ChatMessage,
+  ClientQuestion,
+  ConstructionType,
+  CraftCategory,
+  DimensionMode,
+  IntakeProgress,
+  IntakeResult,
+  Specifications,
+} from '@/lib/types';
 
 /**
  * Agent 1 — vision + structured parsing, and the conversational half of requirement gathering.
@@ -126,9 +139,39 @@ export function applyAnswerToAsked(spec: Specifications, lastAsked: string[], bu
       return { spec: out, deferred: [] };
     }
   }
+  // A question ("raw edge itu kayak gimana?") is not an answer; never store it as the field value.
+  if (QUESTION.test(text)) return { spec, deferred: [] };
   const textKey = open[0].fields.find((k) => fields[k].type === 'text');
   if (textKey) attrs(out)[textKey] = text.replace(/\s+/g, ' ').slice(0, 80);
   return { spec: out, deferred: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Questions & non-standard requests (offline detection; Gemini classifies these itself)
+// ---------------------------------------------------------------------------
+
+const DESIGN_QUESTION = /motif|bentuk|model(nya)?|warna|tampilan|depan(nya)?|belakang(nya)?|kelihatan|jadinya|hasilnya|gambar/i;
+
+export function detectQuestions(burstText: string, category: CraftCategory): ClientQuestion[] {
+  return burstText
+    .split(/(?<=[?.!])\s+|\n+/)
+    .map((t) => t.trim())
+    .filter((t) => t && QUESTION.test(t) && !REQUEST_AS_QUESTION.test(t))
+    .map((text) => ({
+      text,
+      kind: PRICE_OR_TIMELINE.test(text)
+        ? 'PRICE_TIMELINE'
+        : findGlossary(text, category).length
+          ? 'TERMINOLOGY'
+          : DESIGN_QUESTION.test(text)
+            ? 'DESIGN'
+            : 'OTHER',
+    }));
+}
+
+export function detectNonStandard(burstText: string): string | undefined {
+  const hits = [...new Set([...burstText.matchAll(new RegExp(NON_STANDARD.source, 'gi'))].map((m) => m[0].toLowerCase()))];
+  return hits.length ? `Permintaan di luar standar workshop: ${hits.map((h) => `"${h}"`).join(', ')}` : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,10 +191,23 @@ function extractInstruction(category: CraftCategory): string {
   return `You are the intake specialist of a bespoke workshop. The client wants a ${s.noun} (category ${s.id}: ${s.scope}).
 Read the transcript plus any attached photos / voice notes and return the complete, UPDATED specification for THIS category only.
 - Start from the "currently known specification"; change only what the client's messages add or correct.
-- Anything not stated: "" / 0 / false / "UNSPECIFIED". NEVER invent sizes, materials, counts or personalization.
+- Anything not stated: "" / 0 / false / "UNSPECIFIED". Never invent materials, counts or personalization.
 - If the ASSISTANT recommended something and the client agrees ("iya", "boleh", "sip", "oke"), adopt it.
+- A term inside a QUESTION ("raw edge itu kayak gimana?", "bedanya Epsom sama Togo apa?") is NOT a choice: leave that
+  attribute unchanged until the client states a preference. A request phrased as a question ("bisa bikin X?") IS a request.
 - Corrections are relative to the known spec ("kurang tinggi 3cm" adds 3 cm).
 - Put requests that no attribute covers into custom_fields as short label/value pairs.
+
+DIMENSIONS (dimension_mode + reference_object + dimensions_cm), clients rarely know centimetres:
+- Client gives cm ("36x6x26", "9.5x7cm") → EXACT_CM, copy them exactly (two numbers = length x height).
+- No cm, but a REFERENCE MODEL ("mirip Birkin 30", "seukuran Kelly 28", "kayak Speedy") → REFERENCE_BASED, reference_object = the model,
+  dimensions_cm = that model's real outer size (a "mirip / tapi ga persis" request still uses the model's size as the starting point).
+- No cm, but an OBJECT TO HOLD ("muat iPad Air 11 inch", "laptop 14 inch", "dokumen A4") → REFERENCE_BASED, reference_object = the object,
+  dimensions_cm = the object + ~2 cm room per side, deeper (≥6 cm) if accessories like a charger go in too.
+- Furniture that must fit a room / bedside / wall and no measurements → PENDING_SITE_VISIT, dimensions 0 (we measure on site).
+- Otherwise UNSPECIFIED with dimensions 0. Known references for calibration:
+${referenceGuide(category) || '- (none for this category; use your own knowledge of real product sizes)'}
+
 Form factors in this category:
 ${visionGuide([category])}`;
 }
@@ -182,10 +238,14 @@ interface Extraction {
   vision_notes: string;
   construction_type: ConstructionType;
   model_name: string;
+  dimension_mode: DimensionMode;
+  reference_object: string;
   attributes: Record<string, unknown>;
   custom_fields: Array<{ label: string; value: string }>;
   deferred_topics: string[];
   client_finished: boolean;
+  client_questions: ClientQuestion[];
+  non_standard_request: { detected: boolean; reason: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +267,9 @@ export async function runIntakeAgent(input: { messages: ChatMessage[]; known: Sp
   let client_finished = FINISHED.test(burstText);
   let deferred: string[] = [];
   let usedGemini = false;
+  let aiDimensions: { mode?: DimensionMode; reference?: string } = {};
+  let questions: ClientQuestion[] = [];
+  let nonStandard: string | undefined;
 
   if (isGeminiConfigured()) {
     try {
@@ -235,7 +298,7 @@ export async function runIntakeAgent(input: { messages: ChatMessage[]; known: Sp
         parts: [
           {
             text:
-              `Currently known specification:\n${JSON.stringify({ construction_type: spec.construction_type, model_name: spec.model_name, attributes: spec.attributes, custom_fields: spec.custom_fields })}\n\n` +
+              `Currently known specification:\n${JSON.stringify({ construction_type: spec.construction_type, model_name: spec.model_name, dimension_mode: spec.dimension_mode, reference_object: spec.reference_object, attributes: spec.attributes, custom_fields: spec.custom_fields })}\n\n` +
               `Topics the assistant just asked about: ${(input.progress?.last_asked ?? []).join(', ') || 'none'}`,
           },
           transcript,
@@ -249,6 +312,9 @@ export async function runIntakeAgent(input: { messages: ChatMessage[]; known: Sp
       deferred = (x.deferred_topics ?? []).filter((t) => t !== 'none').map((t) => `${spec.category}:${t}`);
       client_finished = client_finished || x.client_finished;
       vision_notes = x.vision_notes || vision_notes;
+      aiDimensions = { mode: x.dimension_mode, reference: x.reference_object };
+      questions = (x.client_questions ?? []).filter((q) => q.text?.trim());
+      if (x.non_standard_request?.detected) nonStandard = x.non_standard_request.reason?.trim() || 'Permintaan di luar standar workshop';
       usedGemini = true;
     } catch (err) {
       console.warn('[intake-agent] ALL Gemini models failed — answering with the offline heuristic parser:', err);
@@ -260,11 +326,14 @@ export async function runIntakeAgent(input: { messages: ChatMessage[]; known: Sp
     const detected = needsClassification ? (hinted.category ? hinted : detectProduct(allClientText)) : {};
     if (detected.category && detected.category !== spec.category) spec = changeCategory(spec, detected.category, detected.construction);
     else if (detected.construction && !isClassified(spec)) spec = normalizeSpecifications({ ...spec, construction_type: detected.construction });
-    // whole history first, newest burst last so it wins on conflicts
-    spec = mergeAttributes(spec, heuristicAttributes(spec.category, allClientText));
-    spec = mergeAttributes(spec, heuristicAttributes(spec.category, burstText));
+    // whole history first, newest burst last so it wins on conflicts; "what is X?" sentences are not choices
+    spec = mergeAttributes(spec, heuristicAttributes(spec.category, withoutExplanationQuestions(allClientText)));
+    spec = mergeAttributes(spec, heuristicAttributes(spec.category, withoutExplanationQuestions(burstText)));
     if (!alreadyProcessed) spec = applyRelativeEdits(spec, burstText, known);
   }
+
+  // Explicit cm > site visit > reference table > Gemini's own reference: keeps mode, reference and size consistent.
+  spec = resolveDimensionSource(spec, allClientText, aiDimensions);
 
   if (!alreadyProcessed) {
     const answered = applyAnswerToAsked(spec, input.progress?.last_asked ?? [], burstText);
@@ -272,7 +341,11 @@ export async function runIntakeAgent(input: { messages: ChatMessage[]; known: Sp
     deferred = [...new Set([...deferred, ...answered.deferred])];
   }
 
-  return { specifications: spec, client_finished, deferred_topics: deferred, vision_notes };
+  // Heuristics back Gemini up: explicit "?" questions it missed, and clear non-standard keywords.
+  if (!questions.length) questions = detectQuestions(burstText, spec.category);
+  nonStandard ??= detectNonStandard(burstText);
+
+  return { specifications: spec, client_finished, deferred_topics: deferred, vision_notes, questions, non_standard_reason: nonStandard };
 }
 
 // ---------------------------------------------------------------------------
@@ -280,11 +353,44 @@ export async function runIntakeAgent(input: { messages: ChatMessage[]; known: Sp
 // ---------------------------------------------------------------------------
 
 const REPLY_INSTRUCTION = `You are the friendly WhatsApp assistant of a bespoke craft workshop. Reply in the client's language (usually casual-polite Bahasa Indonesia, address them as "kak").
-Write ONE short WhatsApp message (2-4 sentences, at most one or two emoji). Greet the client by name ONLY when the prompt says FIRST TURN:
-1. Briefly acknowledge what the client just told you, using their details (and what you understood from any photo).
-2. Where it helps, add a one-line expert recommendation relevant to THIS product type only.
-3. Ask ONLY the topics listed under "ASK NOW", woven naturally (maximum two questions). Never ask about anything else.
-Never quote prices, discounts or delivery dates; the crafter confirms those. No markdown headings or long lists.`;
+Write ONE short WhatsApp message (2-5 sentences, at most one or two emoji). Greet the client by name ONLY when the prompt says FIRST TURN.
+1. If there are CLIENT QUESTIONS, ANSWER THEM FIRST, clearly and concretely:
+   - terminology: explain using the GLOSSARY FACTS (you may simplify, never contradict them);
+   - design ("apakah depannya ada motif?"): answer from the SPECIFICATION only. Features not in it do not exist yet
+     (e.g. no motif unless personalization is set); offer the option instead of inventing it;
+   - price / timeline: the crafter sends the official quote once the specification is complete; never give numbers.
+2. Otherwise briefly acknowledge what the client just said.
+3. Then ask ONLY the topics under "ASK NOW", woven naturally (max two). If a question was about one of those topics, ask
+   which option they prefer (e.g. "mau raw edge atau tetap burnished?"). Never ask anything else.
+No markdown headings or long lists.`;
+
+/** Offline answer: glossary explanations, a spec-based answer to design questions, then the preference question. */
+function templateAnswer(spec: Specifications, questions: ClientQuestion[]): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const q of questions) {
+    if (q.kind === 'PRICE_TIMELINE') {
+      if (!seen.has('price')) parts.push('Untuk harga dan estimasi waktu, crafter kami kirimkan penawaran resminya setelah spesifikasinya lengkap ya kak.');
+      seen.add('price');
+      continue;
+    }
+    for (const g of findGlossary(q.text, spec.category)) {
+      if (!seen.has(g.id)) parts.push(g.explanation);
+      seen.add(g.id);
+    }
+    if (q.kind === 'DESIGN' && /motif|ukir|emboss|gambar|logo|tulisan/i.test(q.text) && !seen.has('motif')) {
+      const emb = (spec.attributes as { embossing_type?: string; embossing_text?: string }).embossing_type;
+      parts.push(
+        emb && emb !== 'UNSPECIFIED' && emb !== 'NONE'
+          ? `Untuk motif: sesuai catatan kami ada ${emb === 'LASER_ENGRAVING' ? 'ukiran laser' : 'emboss'}${(spec.attributes as { embossing_text?: string }).embossing_text ? ` "${(spec.attributes as { embossing_text?: string }).embossing_text}"` : ''}.`
+          : 'Untuk saat ini desainnya polos tanpa motif; kalau kakak mau, bisa ditambah emboss inisial/logo atau ukiran laser.',
+      );
+      seen.add('motif');
+    }
+  }
+  if (!parts.length) parts.push('Pertanyaan kakak kami catat ya, crafter kami akan bantu jelaskan detailnya.');
+  return parts.join('\n\n');
+}
 
 export async function composeReply(input: {
   clientName: string;
@@ -293,11 +399,20 @@ export async function composeReply(input: {
   messages: ChatMessage[];
   visionNotes?: string;
   isFirstTurn: boolean;
+  questions?: ClientQuestion[];
 }): Promise<string> {
-  const fallback = templateQuestion(input.clientName, input.plan.ask, input.isFirstTurn);
-  if (!isGeminiConfigured() || input.plan.ask.length === 0) return fallback;
+  const questions = input.questions ?? [];
+  const siteVisit = input.spec.dimension_mode === 'PENDING_SITE_VISIT' ? '\nUntuk ukurannya, kami akan jadwalkan survei ukur ke lokasi kakak ya 📏' : '';
+  const asks = input.plan.ask.length ? templateQuestion(input.clientName, input.plan.ask, input.isFirstTurn && !questions.length) : '';
+  const fallback = questions.length
+    ? `${templateAnswer(input.spec, questions)}${asks ? `\n\n${asks.replace(/^.*\n/, 'Kakak mau pilih yang mana untuk:\n')}` : ''}${siteVisit}`
+    : `${asks}${siteVisit}`;
+  if (!isGeminiConfigured() || (input.plan.ask.length === 0 && questions.length === 0)) return fallback;
   try {
     const topics = input.plan.ask.map((t) => `- ${t.label}: ${t.ask}`).join('\n');
+    const facts = [...new Map(questions.flatMap((q) => findGlossary(q.text, input.spec.category)).map((g) => [g.id, g])).values()]
+      .map((g) => `- ${g.term}: ${g.explanation}`)
+      .join('\n');
     return await generateText({
       models: MODEL_CHAINS.fast,
       systemInstruction: REPLY_INSTRUCTION,
@@ -306,14 +421,21 @@ export async function composeReply(input: {
           text:
             `Client name: ${input.clientName}\n${input.isFirstTurn ? 'FIRST TURN (greet the client)' : 'FOLLOW-UP TURN (no greeting)'}\n` +
             `Product category: ${schemaOf(input.spec.category).label}\n` +
-            `Specification so far: ${JSON.stringify({ construction_type: input.spec.construction_type, attributes: input.spec.attributes, custom_fields: input.spec.custom_fields })}\n` +
+            (input.spec.dimension_mode === 'REFERENCE_BASED'
+              ? `Size was inferred from the reference "${input.spec.reference_object}"; mention the estimated size briefly and that it can be adjusted.\n`
+              : input.spec.dimension_mode === 'PENDING_SITE_VISIT'
+                ? 'Size needs an on-site measurement: say the workshop will schedule a measurement visit (survei ukur) and ask the client\'s area/available day if not known.\n'
+                : '') +
+            `SPECIFICATION: ${JSON.stringify({ construction_type: input.spec.construction_type, attributes: input.spec.attributes, custom_fields: input.spec.custom_fields })}\n` +
             (input.visionNotes ? `What the photo shows: ${input.visionNotes}\n` : '') +
-            `\nRecent chat:\n${transcriptText(input.messages.slice(-10))}\n\nASK NOW:\n${topics}`,
+            (questions.length ? `\nCLIENT QUESTIONS:\n${questions.map((q) => `- (${q.kind}) ${q.text}`).join('\n')}\n` : '') +
+            (facts ? `\nGLOSSARY FACTS:\n${facts}\n` : '') +
+            `\nRecent chat:\n${transcriptText(input.messages.slice(-10))}\n\nASK NOW:\n${topics || '- (nothing; just answer)'}`,
         },
       ],
     });
   } catch (err) {
-    console.warn('[intake-agent] reply composition failed, using template question:', err);
+    console.warn('[intake-agent] reply composition failed, using template answer:', err);
     return fallback;
   }
 }

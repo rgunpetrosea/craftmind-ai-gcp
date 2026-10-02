@@ -26,18 +26,22 @@ const QUICK_MESSAGES = [
   'Mau bicara dengan admin/crafter',
 ];
 
+interface ScenarioStep {
+  as: 'CLIENT' | 'CRAFTER';
+  text: string;
+  phase: 'setup' | 'scenario' | 'followup';
+}
+
 interface Scenario {
   id: string;
+  name: string;
   category: string;
-  model: string;
   needs_attachment: boolean;
-  client_turns: string[];
-  followup_turns: string[];
-  post_quote_turns: string[];
+  steps: ScenarioStep[];
   expected_summary: string;
 }
 
-const scenarioTurns = (sc: Scenario) => [...sc.client_turns, ...sc.followup_turns, ...sc.post_quote_turns];
+const PHASE_LABEL: Record<ScenarioStep['phase'], string> = { setup: 'konteks', scenario: 'pesan skenario', followup: 'jawaban lanjutan' };
 
 /** Requirement-gathering progress for the active category: its applicable topics, required ones marked *. */
 function SpecChecklist({ order }: { order: OrderPayload }) {
@@ -117,14 +121,14 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, data?.ai_pending]);
 
-  async function send(event: Omit<InboundWhatsAppEvent, 'phone_number' | 'client_name_wa' | 'sender'>) {
+  async function send(event: Omit<InboundWhatsAppEvent, 'phone_number' | 'client_name_wa' | 'sender'>, sender: 'CLIENT' | 'CRAFTER' = sendAs) {
     setBusy(true);
     setNotice(null);
     try {
       const res = await postJson<{ action: string; keyword?: string; debounce_ms?: number }>('/api/webhook/whatsapp', {
         phone_number: phone,
         client_name_wa: name,
-        sender: sendAs,
+        sender,
         ...event,
       });
       setNotice(
@@ -155,16 +159,16 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
     setStep(0);
     if (!sc) return;
     await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}`, { method: 'DELETE' });
-    setNotice(`${sc.id}: ${sc.model}. Kirim pesan klien satu per satu, tunggu balasan AI di antaranya.${sc.needs_attachment ? ' Skenario asli juga mengirim foto/sketsa; lampirkan lewat ikon gambar.' : ''}`);
+    setNotice(`${sc.id}: ${sc.name}. Kirim langkah satu per satu, tunggu balasan AI di antaranya.${sc.needs_attachment ? ' Skenario asli juga mengirim foto/sketsa; lampirkan lewat ikon gambar.' : ''}`);
     await refresh();
   }
 
   async function sendScenarioStep() {
     if (!scenario) return;
-    const turn = scenarioTurns(scenario)[step];
+    const turn = scenario.steps[step];
     if (!turn) return;
     setStep(step + 1);
-    await sendText(turn);
+    await send({ text: turn.text }, turn.as);
   }
 
   async function onFile(file: File | undefined, type: 'image' | 'audio') {
@@ -200,7 +204,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
   }
 
   return (
-    <div className="flex h-[680px] w-full max-w-md flex-col overflow-hidden rounded-[28px] border-8 border-stone-900 bg-wa-wallpaper shadow-2xl">
+    <div className="flex h-[calc(100dvh-7rem)] max-h-[900px] min-h-[600px] w-full max-w-md flex-col overflow-hidden rounded-[28px] border-8 border-stone-900 bg-wa-wallpaper shadow-2xl">
       {/* Header */}
       <div className="bg-wa-header px-4 py-3 text-white">
         <div className="flex items-center gap-3">
@@ -240,7 +244,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
       {order && order.session_state !== 'IDLE' && order.session_state !== 'APPROVED' && <SpecChecklist order={order} />}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 py-4">
         {messages.length === 0 && (
           <p className="mx-auto w-fit rounded-md bg-amber-50 px-3 py-1.5 text-center text-[11px] text-stone-600 shadow-sm">
             Kirim pesan sebagai klien untuk memulai simulasi 👇
@@ -267,13 +271,13 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
           <option value="">Free chat — or pick a test scenario from scenarios.csv…</option>
           {scenarioData?.scenarios.map((sc) => (
             <option key={sc.id} value={sc.id}>
-              {sc.id} · {sc.category} · {sc.model}
+              {sc.id} · {sc.category} · {sc.name}
             </option>
           ))}
         </select>
         {scenario ? (
           (() => {
-            const turns = scenarioTurns(scenario);
+            const turns = scenario.steps;
             const next = turns[step];
             return next ? (
               <button
@@ -282,11 +286,9 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
                 className="w-full rounded-lg bg-white px-3 py-1.5 text-left text-[11px] text-wa-header shadow-sm ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-50"
               >
                 <span className="font-semibold">
-                  Kirim pesan {step + 1}/{turns.length}
-                  {step >= scenario.client_turns.length && step < scenario.client_turns.length + scenario.followup_turns.length ? ' (jawaban lanjutan)' : ''}
-                  {step >= scenario.client_turns.length + scenario.followup_turns.length ? ' (revisi setelah spec card)' : ''}:
+                  {next.as === 'CRAFTER' ? 'Kirim sebagai crafter' : 'Kirim pesan'} {step + 1}/{turns.length} ({PHASE_LABEL[next.phase]}):
                 </span>{' '}
-                {next}
+                {next.text}
               </button>
             ) : (
               <p className="rounded-lg bg-white/80 px-3 py-1.5 text-[11px] text-stone-600">

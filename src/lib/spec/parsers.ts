@@ -11,7 +11,12 @@ const first = <T,>(rules: Array<[RegExp, T]>, text: string) => rules.find(([re])
 /** "30x10x22", "30 x 22 cm", "panjang 30 lebar 10 tinggi 22". Two numbers = length x height. */
 export function parseDimensions(text: string): Partial<Dimensions> | undefined {
   const m = /(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)(?:\s*[x×*]\s*(\d+(?:[.,]\d+)?))?/i.exec(text);
-  if (m) return m[3] ? { length: num(m[1]), width: num(m[2]), height: num(m[3]) } : { length: num(m[1]), height: num(m[2]) };
+  if (m) {
+    if (m[3]) return { length: num(m[1]), width: num(m[2]), height: num(m[3]) };
+    // "11.5 x 9 cm, tebal 1.2 cm": two numbers = length x height, depth stated separately
+    const depth = /(?:tebal|ketebalan|kedalaman|depth|lebar samping)\s*(?:nya)?\s*(\d+(?:[.,]\d+)?)/i.exec(text)?.[1];
+    return { length: num(m[1]), height: num(m[2]), ...(depth && { width: num(depth) }) };
+  }
   const p = /panjang\s*(\d+(?:[.,]\d+)?)/i.exec(text)?.[1];
   const l = /lebar\s*(\d+(?:[.,]\d+)?)/i.exec(text)?.[1];
   const t = /tinggi\s*(\d+(?:[.,]\d+)?)/i.exec(text)?.[1];
@@ -20,6 +25,14 @@ export function parseDimensions(text: string): Partial<Dimensions> | undefined {
 }
 
 const LEATHER_TYPES: Array<[RegExp, string]> = [
+  // exotics first: "Himalayan Crocodile" must not be read as anything else
+  [/himalaya\w*\s*croc\w*/i, 'Himalayan Crocodile'],
+  [/crocodile|\bcroc\b|buaya|alligator/i, 'Crocodile'],
+  [/python|kulit ular|\bular\b/i, 'Python'],
+  [/ostrich|burung unta/i, 'Ostrich'],
+  [/lizard|biawak/i, 'Lizard'],
+  [/stingray|ikan pari|shagreen/i, 'Stingray'],
+  [/novonappa|novo ?nappa/i, 'Novonappa'],
   [/veg[\s-]?tan|nabati/i, 'Veg-Tan'],
   [/chrome[\s-]?tan|chrome/i, 'Chrome-Tan'],
   [/epsom/i, 'Epsom'],
@@ -53,8 +66,16 @@ export function parseColor(text: string): string | undefined {
   return first(COLORS, stripLeatherTypes(text));
 }
 
+/** "outer-nya pake X, interior Y" → "X": the exterior clause when the client names one. */
+const OUTER_CLAUSE = /(?:outer|luar(?:an)?|eksterior|exterior|bagian luar)(?:-?nya)?\s*(?:pake|pakai|dari|:)?\s*([^,.;\n]+)/i;
+
 /** "veg-tan coklat 1.6mm" → "Veg-Tan Brown 1.6mm"; "bahan kulit warna olive" → "Olive Green leather". */
 export function parseLeather(text: string): string | undefined {
+  const outer = OUTER_CLAUSE.exec(text)?.[1];
+  return (outer && parseLeatherIn(outer)) || parseLeatherIn(text);
+}
+
+function parseLeatherIn(text: string): string | undefined {
   const type = first(LEATHER_TYPES, text);
   const color = parseColor(text);
   if (type) {
@@ -80,6 +101,8 @@ const WOODS: Array<[RegExp, string]> = [
   [/besi|iron/i, 'Besi (iron)'],
   [/stainless|baja|steel/i, 'Stainless steel'],
   [/rotan|rattan/i, 'Rotan (rattan)'],
+  // species not decided yet: keeps the material topic answered, stock allocation waits for the crafter
+  [/\bkayu\b|\bwood(en)?\b/i, 'Kayu (jenis menyusul)'],
 ];
 
 export function parseWoodOrMetal(text: string): string | undefined {
@@ -135,8 +158,13 @@ export const parseThreadMaterial = (text: string) => /benang[^.,]{0,20}?(linen|p
 export const parseThreadColor = (text: string) => new RegExp(`benang[^.,]{0,25}?\\b(${THREAD_COLORS})\\b`, 'i').exec(text)?.[1];
 export const parseStitchPattern = (text: string) => /(diamond|saddle|baseball|running)\s*stitch/i.exec(text)?.[0];
 
+/** "interior Novonappa Tan", "lining-nya pake pigskin suede", "dalemnya warna merah burgundy". Not "saku di dalam". */
+const LINING_CLAUSE = /(?<!di\s)(?:interior|lining|dalam(?:an)?|dalem)(?:-?nya)?\s+(?:minta\s+|pake\s+|pakai\s+|dari\s+|warna\s+|bahan\s+)*([^,.;\n]+)/i;
+
 export function parseLining(text: string): string | undefined {
   if (/tanpa lining|unlined|ga pake lining|gak pakai lining/i.test(text)) return 'Tanpa lining';
+  const clause = LINING_CLAUSE.exec(text)?.[1]?.replace(/\s*\d.*$/, '').replace(/\b(ya|dong|aja|mas|kak)\b.*$/i, '').trim();
+  if (clause && clause.length >= 3) return clause;
   if (/lining[^.,]{0,15}suede|suede[^.,]{0,15}lining|beludru/i.test(text)) return 'Suede lining';
   if (/lining[^.,]{0,15}(kanvas|canvas)|(kanvas|canvas)[^.,]{0,15}lining/i.test(text)) return 'Canvas lining';
   if (/lining[^.,]{0,15}kulit|leather lining|calf lining/i.test(text)) return 'Leather lining';
@@ -151,7 +179,8 @@ export function parseZipper(text: string): string | undefined {
 }
 
 export function parseCount(text: string, nouns: string): number | undefined {
-  const m = new RegExp(`(\\d+)\\s*(?:slot\\s*|buah\\s*|pcs\\s*)?(?:${nouns})`, 'i').exec(text);
+  // allow up to two adjectives in between: "6 curved card slots", "4 slot kartu"
+  const m = new RegExp(`(\\d+)\\s*(?:[a-z]+\\s+){0,2}?(?:slot\\s*|buah\\s*|pcs\\s*)?(?:${nouns})`, 'i').exec(text);
   return m ? Number(m[1]) : undefined;
 }
 

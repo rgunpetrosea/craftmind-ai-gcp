@@ -71,7 +71,8 @@
       "color_stain": "Natural",
       "joinery_type": "MORTISE_TENON",
       "assembly": "ASSEMBLED"
-    }
+    },
+    "site_visit_fee_idr": 150000
   },
   {
     "category": "CUSTOM_GENERIC",

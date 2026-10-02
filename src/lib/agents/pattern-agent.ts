@@ -43,6 +43,7 @@ function smallGoods(spec: Extract<Specifications, { category: 'SMALL_GOODS' }>, 
       add('Back panel', 1, dim(L, H));
       add('Card slot pocket', cards, dim(L - 1, H * 0.4));
       add('Central cash pocket', a.central_pockets, dim(L - 1, H * 0.85));
+      if (lined) add(`Interior lining — ${a.lining}`, 2, dim(L, H));
       return;
     case 'ZIP_AROUND_LONG_WALLET':
       add('Front panel', 1, dim(L, H));
@@ -83,6 +84,7 @@ function bag(spec: Extract<Specifications, { category: 'BAG' }>, add: Add) {
   if (a.strap_type === 'BACKPACK_STRAPS' || a.strap_type === 'CONVERTIBLE') add('Backpack shoulder strap', 2, dim(70, 5));
   else if (bagHasStrap(a)) add(a.strap_type === 'WEBBING' ? 'Webbing strap (other material)' : 'Shoulder strap', 1, dim(120, 3.5));
   if (['SLOUCHY_TOTE', 'STRUCTURED_TOTE', 'HYBRID_BACKPACK_TOTE'].includes(id)) add('Shoulder handle', 2, dim(60, 3.5));
+  else if (id === 'TOP_HANDLE_BAG') add('Rolled top handle', 2, dim(28, 5));
   else if (a.strap_type !== 'NONE') add('Top handle', 1, dim(32, 4));
   if (a.structure === 'RIGID') add('Reinforcement salpa (other material)', 1, dim(L, H));
   if (a.padding.trim()) add('Foam padding panel', 2, dim(L, H));
@@ -147,6 +149,14 @@ function furniture(spec: Extract<Specifications, { category: 'FURNITURE' }>, add
       add('Door', 2, dim(L / 2, H - 10));
       add('Back panel plywood', 1, dim(L, H));
       add('Plinth / leg', 4, dim(10, leg));
+      break;
+    case 'NIGHTSTAND':
+      add('Top board', 1, dim(L, W));
+      add('Side panel', 2, dim(H - 10, W));
+      add('Bottom board', 1, dim(L, W));
+      add('Drawer front & box', 1, dim(L, 45));
+      add('Leg', 4, dim(12, 4));
+      add('Back panel plywood', 1, dim(L, H - 10));
       break;
     case 'BED_FRAME':
       add('Headboard', 1, dim(W, H));

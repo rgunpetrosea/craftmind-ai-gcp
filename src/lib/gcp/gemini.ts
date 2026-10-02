@@ -21,6 +21,8 @@ export const MODELS = {
 export const MODEL_CHAINS = {
   flash: [MODELS.flash, process.env.GEMINI_FLASH_FALLBACK_MODEL ?? 'gemini-flash-lite-latest'],
   pro: [MODELS.pro, MODELS.flash, 'gemini-flash-lite-latest'],
+  /** Image generation (sketch-conditioned renders and crafter feedback edits), best quality first. */
+  image: [MODELS.image, 'gemini-2.5-flash-image', 'gemini-3.1-flash-image', 'gemini-3-pro-image', 'gemini-3.1-flash-lite-image'],
   /** Short conversational replies: lightest model first for latency. */
   fast: ['gemini-flash-lite-latest', MODELS.flash],
 } as const;
@@ -76,25 +78,58 @@ const isTransient = (err: unknown) => [429, 500, 502, 503, 504].includes(apiStat
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Hard quota (free tier "limit: 0" or a per-day cap): retrying the same model cannot succeed today. */
+function isHardQuota(err: unknown): boolean {
+  const msg = String((err as Error)?.message ?? err);
+  return /limit:\s*0\b|"quotaValue":"0"|PerDay/i.test(msg);
+}
+
+/** Google's suggested wait for a rate limit ("retryDelay":"17s"), capped. */
+function retryDelayMs(err: unknown, fallbackMs: number): number {
+  const s = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(String((err as Error)?.message ?? err))?.[1];
+  return Math.min(20_000, s ? Number(s) * 1000 + 250 : fallbackMs);
+}
+
+interface FallbackOptions {
+  /** Attempts per model per pass (default 2). */
+  attempts?: number;
+  /** Also retry per-minute rate limits (429) on the same model, honouring retryDelay (default: move on). */
+  retryRateLimits?: boolean;
+  /** Passes over the whole chain (default 1). */
+  passes?: number;
+}
+
 /**
- * Run `call` against each model in the chain. Transient errors are retried once on the
- * same model with a short backoff, then the next model is tried. Throws the last error.
+ * Run `call` against each model in the chain. Transient errors (5xx; 429 rate limits when `retryRateLimits`) are retried
+ * on the same model with backoff, then the next model is tried; hard quotas and 4xx move on immediately. Throws the last
+ * error once every pass is exhausted.
  */
-async function withModelFallback<T>(models: readonly string[], call: (model: string) => Promise<T>): Promise<T> {
+async function withModelFallback<T>(models: readonly string[], call: (model: string) => Promise<T>, opts: FallbackOptions = {}): Promise<T> {
+  const { attempts = 2, retryRateLimits = false, passes = 1 } = opts;
+  const chain = [...new Set(models)];
+  const dead = new Set<string>(); // models with a hard quota / 4xx: don't try again in a later pass
   let lastError: unknown;
-  for (const model of [...new Set(models)]) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return await call(model);
-      } catch (err) {
-        lastError = err;
-        const status = apiStatus(err);
-        console.warn(`[gemini] ${model} attempt ${attempt + 1} failed (${status ?? 'error'})`);
-        // Quota (429) and missing models (404) won't recover on a retry; move on immediately.
-        if (!isTransient(err) || status === 429) break;
-        await sleep(600 * (attempt + 1));
+  for (let pass = 0; pass < passes; pass++) {
+    for (const model of chain) {
+      if (dead.has(model)) continue;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+          return await call(model);
+        } catch (err) {
+          lastError = err;
+          const status = apiStatus(err);
+          console.warn(`[gemini] ${model} pass ${pass + 1} attempt ${attempt + 1} failed (${status ?? 'error'})`);
+          if (!isTransient(err) || isHardQuota(err)) {
+            dead.add(model);
+            break;
+          }
+          if (status === 429 && !retryRateLimits) break;
+          if (attempt < attempts - 1) await sleep(status === 429 ? retryDelayMs(err, 4000) : 800 * 2 ** attempt);
+        }
       }
     }
+    if (dead.size === chain.length) break;
+    if (pass < passes - 1) await sleep(3000);
   }
   throw lastError;
 }
@@ -148,20 +183,38 @@ export interface GeneratedImage {
   base64: string;
 }
 
-/** Image generation via a Gemini multimodal model (accepts reference images such as the sketch and the previous render). */
+/**
+ * Image generation via Gemini multimodal image models (accepts reference images such as the sketch and the previous
+ * render). Tries every model in MODEL_CHAINS.image with the usual retry/fallback before giving up.
+ */
 export async function generateImageWithGemini(prompt: string, references: Part[] = []): Promise<GeneratedImage> {
   const parts: Part[] = [...references, { text: prompt }];
-  const response = await getGenAI().models.generateContent({
-    model: MODELS.image,
-    contents: [{ role: 'user', parts }],
-    config: { responseModalities: ['IMAGE', 'TEXT'] },
-  });
-  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
-    if (part.inlineData?.data) {
-      return { mimeType: part.inlineData.mimeType ?? 'image/png', base64: part.inlineData.data };
+  // Images are worth waiting for (billing on): retry rate limits with backoff, and make a second pass over the chain.
+  return withModelFallback(MODEL_CHAINS.image, async (model) => {
+    const response = await getGenAI().models.generateContent({
+      model,
+      contents: [{ role: 'user', parts }],
+      config: { responseModalities: ['IMAGE', 'TEXT'] },
+    });
+    for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+      if (part.inlineData?.data) return { mimeType: part.inlineData.mimeType ?? 'image/png', base64: part.inlineData.data };
     }
+    // a text-only answer happens occasionally; treat it as transient so the same model is retried
+    throw Object.assign(new Error(`${model} returned no image`), { status: 503 });
+  }, { attempts: 3, retryRateLimits: true, passes: 2 });
+}
+
+/** Turn an image-generation failure into something the crafter can act on. */
+export function describeImageError(err: unknown): string {
+  const msg = String((err as Error)?.message ?? err);
+  const status = apiStatus(err);
+  if (status === 429 && /limit:\s*0\b|"quotaValue":"0"/.test(msg)) {
+    return 'This Gemini API key is on the free tier, where Google sets the image-generation quota to 0 for every image model. Enable billing for the key\'s Google Cloud project (AI Studio → API keys → Set up billing) to get studio renders.';
   }
-  throw new Error(`${MODELS.image} returned no image`);
+  if (status === 429) return 'Image-generation quota reached (per-minute or daily limit). Try "Re-render" again later.';
+  if (status === 404) return 'The configured image model is not available to this key; set GEMINI_IMAGE_MODEL to a model listed for it.';
+  if (status && status >= 500) return 'Google image service is temporarily unavailable. Try "Re-render" again in a minute.';
+  return `Image generation failed: ${msg.slice(0, 160)}`;
 }
 
 /** Imagen is only served by Vertex AI; the AI Studio API key rejects it. */

@@ -14,6 +14,8 @@ const LINKS = [
 
 export function SiteNav() {
   const pathname = usePathname();
+  // the client-facing gallery must not show the crafter's navigation
+  if (pathname.startsWith('/gallery')) return null;
   return (
     <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/90 backdrop-blur">
       <nav className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">

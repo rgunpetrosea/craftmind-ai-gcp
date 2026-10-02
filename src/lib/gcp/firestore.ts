@@ -194,10 +194,35 @@ class FirestoreStore implements DataStore {
 
 const globalForStore = globalThis as unknown as { __craftmindStore?: DataStore };
 
-/** Singleton that survives Next.js dev hot reloads. */
+/**
+ * Normalizes every order on the way in and out, independent of the raw store's code version. The raw store lives on
+ * globalThis so data survives dev hot reloads, which means a long-running `next dev` can hold an instance of an OLDER
+ * store class (and orders in an older schema). Wrapping it here keeps every reader on the current schema.
+ */
+function normalizing(raw: DataStore): DataStore {
+  return {
+    ...bindAll(raw),
+    getOrder: async (id) => {
+      const o = await raw.getOrder(id);
+      return o ? normalizeOrder(o) : null;
+    },
+    listOrders: async () => (await raw.listOrders()).map(normalizeOrder),
+    saveOrder: (order) => raw.saveOrder(normalizeOrder(order)),
+  };
+}
+
+function bindAll(raw: DataStore): DataStore {
+  const methods: Array<keyof DataStore> = [
+    'getOrder', 'listOrders', 'saveOrder', 'getConversation', 'saveConversation', 'appendMessage',
+    'listMessages', 'updateMessage', 'listInventory', 'saveInventoryItem', 'listPresets', 'savePreset',
+  ];
+  return Object.fromEntries(methods.map((m) => [m, (raw[m] as (...a: unknown[]) => unknown).bind(raw)])) as unknown as DataStore;
+}
+
+/** Singleton that survives Next.js dev hot reloads; always accessed through the normalizing wrapper. */
 export function getStore(): DataStore {
   globalForStore.__craftmindStore ??= process.env.USE_FIRESTORE === 'true' ? new FirestoreStore() : new MemoryStore();
-  return globalForStore.__craftmindStore;
+  return normalizing(globalForStore.__craftmindStore);
 }
 
 export function isFirestoreEnabled(): boolean {
