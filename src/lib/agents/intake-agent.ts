@@ -562,8 +562,8 @@ CONVERSATIONAL RULES:
 - MOCKUPS: when the client asks to see a picture / mockup / draft / "gambaran", or the core specification is complete, CALL
   generate_mockup_tool (it renders the image and sends it in this chat). Never say the picture comes later, after
   confirmation, with the quotation or during production; if you call the tool, your text may say it's being prepared.
-  Pick angle_id from the views listed in the tool: "posisi terbuka" / "bagian dalam" / "slot kartu" means the OPEN INTERIOR
-  angle (never re-render the closed exterior for it). Fill adjustment only for a visual change the spec doesn't capture.
+  Call it ONCE per reply with every view you want in "angles" (e.g. [1, 2, 3]). Pick the views listed in the tool:
+  "posisi terbuka" / "bagian dalam" / "slot kartu" means the OPEN INTERIOR angle (never re-render the closed exterior for it). Fill adjustment only for a visual change the spec doesn't capture.
 - Never promise prices, discounts or dates. No markdown headings, no bullet lists.`;
 
 /** Settled topics with what we know about them, so the reply model never re-asks them in its own words. */
@@ -609,7 +609,7 @@ function templateAnswer(spec: Specifications, questions: ClientQuestion[]): stri
 
 export interface ComposedReply {
   text: string;
-  /** The model called generate_mockup_tool, with these arguments (angle_id, adjustment). */
+  /** The model called generate_mockup_tool, with these arguments (angles, adjustment). */
   mockupCall?: MockupToolArgs;
 }
 
@@ -691,7 +691,7 @@ export async function composeReply(input: {
     });
     // the model may only call the tool; the planned questions then come from the template
     const call = r.calls.find((c) => c.name === MOCKUP_TOOL_NAME);
-    return { text: r.text || fallback, ...(call && { mockupCall: { angle_id: call.args.angle_id, adjustment: call.args.adjustment } }) };
+    return { text: r.text || fallback, ...(call && { mockupCall: { angles: call.args.angles, angle_id: call.args.angle_id, adjustment: call.args.adjustment } }) };
   } catch (err) {
     console.warn('[intake-agent] reply composition failed, using template answer:', err);
     return { text: fallback };

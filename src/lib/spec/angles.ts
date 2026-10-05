@@ -132,6 +132,29 @@ export function defaultMockupAngles(category: CraftCategory, construction?: Cons
   return interior ? ['ANGLE_1', interior] : ['ANGLE_1'];
 }
 
+/**
+ * The full set rendered when the spec is confirmed (spec card), in ONE tool call: the default angles plus the category's
+ * detail macro when it has one (wallets: closed + open interior + stitch & edge macro = all 3; footwear / furniture /
+ * custom: hero + macro; bags have no macro slot and keep their pair).
+ */
+export function confirmationMockupAngles(category: CraftCategory, construction?: ConstructionType): MockupAngle[] {
+  const detail = angleForScope(category, 'DETAIL', construction);
+  const set = new Set([...defaultMockupAngles(category, construction), ...(detail ? [detail] : [])]);
+  return MOCKUP_ANGLES.filter((a) => set.has(a));
+}
+
+/** Does this product get a detail macro shot (and therefore the larger AI render budget)? */
+export function needsDetailMacro(category: CraftCategory, construction?: ConstructionType): boolean {
+  return angleForScope(category, 'DETAIL', construction) !== undefined;
+}
+
+/** `angles` [1, 2, 3] from the mockup tool → slots (invalid ids dropped, duplicates removed, slot order). */
+export function anglesFromIds(ids: unknown): MockupAngle[] {
+  if (!Array.isArray(ids)) return [];
+  const set = new Set(ids.map(angleFromId).filter((a): a is MockupAngle => Boolean(a)));
+  return MOCKUP_ANGLES.filter((a) => set.has(a));
+}
+
 /** Human list of the slots for the tool description: "1 = Closed exterior, 2 = Open interior, 3 = ...". */
 export function angleChoices(category: CraftCategory, construction?: ConstructionType): string {
   return MOCKUP_ANGLES.map((a, i) => {

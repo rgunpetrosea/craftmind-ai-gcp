@@ -3,7 +3,7 @@ import { matchInventory } from '@/lib/agents/inventory-agent';
 import { computeQuotation } from '@/lib/agents/pricing';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
 import { isRenderingAngles } from '@/lib/mockups';
-import { MAX_AI_MOCKUP_RENDERS, SESSION_TURN_CAP } from '@/lib/spec/guardrails';
+import { aiRenderCap, SESSION_TURN_CAP } from '@/lib/spec/guardrails';
 import { primaryMaterial } from '@/lib/spec/describe';
 import { expirePartialPause } from '@/lib/utils/takeover';
 
@@ -31,7 +31,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<'/api/orders/
     turns_used: order.intake?.session_turn_count ?? 0,
     turn_cap: SESSION_TURN_CAP,
     renders_used: order.intake?.mockup_render_count ?? 0,
-    render_cap: MAX_AI_MOCKUP_RENDERS,
+    render_cap: aiRenderCap(order.specifications),
   };
   return Response.json({ order, messages, breakdown, allocated_stock: allocated, rendering_angles: isRenderingAngles(id), budget });
 }

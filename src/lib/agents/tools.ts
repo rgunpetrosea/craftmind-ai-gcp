@@ -1,9 +1,9 @@
 import { Type, type FunctionDeclaration } from '@google/genai';
 import { getStore } from '@/lib/gcp/firestore';
 import { currentAngles, finalSpecOf, renderMockupAngles, reusableRender } from '@/lib/mockups';
-import { angleChoices, angleDef, angleForRequest, angleFromId, defaultMockupAngles } from '@/lib/spec/angles';
+import { angleChoices, angleDef, angleForRequest, angleFromId, anglesFromIds, defaultMockupAngles } from '@/lib/spec/angles';
 import { isClassified } from '@/lib/spec/catalog';
-import { MAX_AI_MOCKUP_RENDERS, mockupCapMessage } from '@/lib/spec/guardrails';
+import { aiRenderCap, mockupCapMessage } from '@/lib/spec/guardrails';
 import type { CrafterProfile, IntakeProgress, MockupAngle, MockupRender, Specifications } from '@/lib/types';
 import { isAiBlocked } from '@/lib/utils/takeover';
 import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
@@ -15,7 +15,7 @@ import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
 
 export const MOCKUP_TOOL_NAME = 'generate_mockup_tool';
 
-/** Declaration for this order: `angle_id` is explained with the product's own views (1 = closed, 2 = open, ...). */
+/** Declaration for this order: angle ids are explained with the product's own views (1 = closed, 2 = open, ...). */
 export function mockupToolDeclaration(spec?: Specifications): FunctionDeclaration {
   const choices = spec && isClassified(spec) ? angleChoices(spec.category, spec.construction_type) : '1 = main exterior view, 2 = open / interior view, 3 = detail macro';
   return {
@@ -23,16 +23,19 @@ export function mockupToolDeclaration(spec?: Specifications): FunctionDeclaratio
     description:
       'Render a studio mockup (draft image) of the product from the current specification and send it to the client in this chat. ' +
       'Call it when the client asks to see a picture / mockup / draft / "gambaran", or when the core specification is complete. ' +
-      'Do not promise to send an image later: call this tool instead.',
+      'Do not promise to send an image later: call this tool instead. ' +
+      'Several views are rendered in ONE call (pass them all in `angles`); never call the tool once per angle.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         reason: { type: Type.STRING, description: 'CLIENT_REQUEST or CORE_SPEC_COMPLETE' },
-        angle_id: {
-          type: Type.INTEGER,
+        angles: {
+          type: Type.ARRAY,
+          items: { type: Type.INTEGER },
           description:
-            `Which view to render: ${choices}. When the client asks for the open / inside view ("posisi terbuka", "bagian dalam", ` +
-            '"slot kartu", "interior"), pass the interior angle, never the closed exterior. Omit for the default set.',
+            `Views to render in this single call: ${choices}. E.g. [1, 2, 3] for the full set. When the client asks for the open / ` +
+            'inside view ("posisi terbuka", "bagian dalam", "slot kartu", "interior"), pass the interior angle, never the closed ' +
+            'exterior. Omit for the default set.',
         },
         adjustment: {
           type: Type.STRING,
@@ -47,7 +50,9 @@ export function mockupToolDeclaration(spec?: Specifications): FunctionDeclaratio
 }
 
 export interface MockupToolArgs {
-  /** 1..3, the slot the model picked. */
+  /** [1, 2, 3]: the slots rendered in this single call (batched, one render round). */
+  angles?: unknown;
+  /** 1..3, a single slot (older calls). */
   angle_id?: unknown;
   adjustment?: unknown;
   /** The client's words when they asked for a picture: an explicit view ("posisi terbuka") outranks the model's pick. */
@@ -61,10 +66,17 @@ export type MockupToolResult =
   | { status: 'FAILED' }
   | { status: 'SKIPPED_TAKEOVER' };
 
-/** Which slots this call is for: an explicit view in the client's words, else the model's angle_id, else the default set. */
+/**
+ * Which slots this call renders: an explicit view in the client's words, else the batch in `angles`, else a single
+ * `angle_id`, else the default set (wallets / bags: closed + open interior).
+ */
 export function targetAngles(spec: Specifications, args: MockupToolArgs): MockupAngle[] {
-  const asked = angleForRequest(args.requestText ?? '', spec.category, spec.construction_type) ?? angleFromId(args.angle_id);
-  return asked ? [asked] : defaultMockupAngles(spec.category, spec.construction_type);
+  const asked = angleForRequest(args.requestText ?? '', spec.category, spec.construction_type);
+  if (asked) return [asked];
+  const batch = anglesFromIds(args.angles);
+  if (batch.length) return batch;
+  const single = angleFromId(args.angle_id);
+  return single ? [single] : defaultMockupAngles(spec.category, spec.construction_type);
 }
 
 /**
@@ -74,7 +86,7 @@ export function targetAngles(spec: Specifications, args: MockupToolArgs): Mockup
  *
  * Quota: an angle whose existing render still shows the current spec (same signature) and is not the target of a free-text
  * adjustment is re-sent as is, without an image call. The per-session AI render counter (`mockup_render_count`, max
- * MAX_AI_MOCKUP_RENDERS) goes up by ONE per call, a paired exterior + interior render included, and only when a real
+ * `aiRenderCap()`: 3 with a macro shot, else 2) goes up by ONE per call, however many angles the batch renders, and only when a real
  * image (not the offline concept) was generated for a requested angle. Over the cap no image API is called and the
  * client gets the crafter hand-off message (once). A render failure gets a short apology and the crafter is notified.
  */
@@ -96,7 +108,7 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
   const toGenerate = targets.filter((a) => !reused.includes(a));
 
   const used = order.intake?.mockup_render_count ?? 0;
-  const capped = toGenerate.length > 0 && used >= MAX_AI_MOCKUP_RENDERS;
+  const capped = toGenerate.length > 0 && used >= aiRenderCap(spec);
   const sendable = targets.filter((a) => !(capped && toGenerate.includes(a)));
   const intro = !toGenerate.length || capped
     ? 'Ini gambarnya ya kak.'

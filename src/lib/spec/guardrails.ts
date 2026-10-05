@@ -1,6 +1,7 @@
+import { needsDetailMacro } from '@/lib/spec/angles';
 import { detectProduct } from '@/lib/spec/catalog';
 import { allowedList, specialty } from '@/lib/spec/offerings';
-import type { CrafterProfile, MessageIntent } from '@/lib/types';
+import type { CrafterProfile, MessageIntent, Specifications } from '@/lib/types';
 
 /**
  * Domain boundary for the intake assistant: brand greeting, polite refusal of non-crafting / malicious messages, and the
@@ -58,6 +59,13 @@ export const SESSION_TURN_CAP = Number(process.env.SESSION_TURN_CAP ?? 10);
 export const SESSION_TURN_WARNING = Number(process.env.SESSION_TURN_WARNING ?? 8);
 /** AI mockup render rounds per intake session (spec lock + revisions). Crafter re-renders are capped separately. */
 export const MAX_AI_MOCKUP_RENDERS = Number(process.env.MAX_AI_MOCKUP_RENDERS ?? 2);
+/** The same budget for products that also get a detail macro shot (wallets, footwear, furniture, custom items). */
+export const MAX_AI_MOCKUP_RENDERS_DETAIL = Number(process.env.MAX_AI_MOCKUP_RENDERS_DETAIL ?? 3);
+
+/** AI render rounds this order may use ("AI renders X/3" for products with a macro shot, X/2 otherwise). */
+export function aiRenderCap(spec: Pick<Specifications, 'category' | 'construction_type'>): number {
+  return needsDetailMacro(spec.category, spec.construction_type) ? MAX_AI_MOCKUP_RENDERS_DETAIL : MAX_AI_MOCKUP_RENDERS;
+}
 /** Consecutive client messages without new product details before the loop detector hands over. */
 export const LOOP_STRIKE_LIMIT = Number(process.env.LOOP_STRIKE_LIMIT ?? process.env.CONFUSION_STRIKE_LIMIT ?? 3);
 /** Silent background parses per session while a human has taken over (each is a Gemini call). */

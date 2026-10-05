@@ -252,8 +252,9 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   `SESSION_TURN_WARNING` (8) an incomplete intake gets `turnWarningMessage` + crafter notification; at turn
   `SESSION_TURN_CAP` (10) the AI sends `sessionCapMessage`, switches to FULL_MANUAL (`SESSION_LIMIT`) and notifies the crafter.
   "Resume AI" on the dashboard resets the turn count.
-- AI mockups: at most `MAX_AI_MOCKUP_RENDERS` (2) render rounds per session that actually generated an image (unchanged
-  angles are re-sent for free, see v14). Beyond that no image API call; the reply carries `mockupCapMessage`. Crafter dashboard
+- AI mockups: at most `aiRenderCap(spec)` render rounds per session that actually generated an image (unchanged angles
+  are re-sent for free, see v14): `MAX_AI_MOCKUP_RENDERS_DETAIL` (3) for products with a detail macro slot (wallets,
+  footwear, furniture, custom), `MAX_AI_MOCKUP_RENDERS` (2) otherwise (bags). The dashboard badge shows the order's cap. Beyond that no image API call; the reply carries `mockupCapMessage`. Crafter dashboard
   renders are capped per order by `MAX_CRAFTER_RENDERS_PER_ORDER` (429).
 - Loop detector (reason CONFUSION_RULE): evaluated once per DEBOUNCED turn on the combined burst (+1 per turn, never per
   raw message). Design context resets the counter to 0: feedback / corrections ("salah", "revisi", "maksudnya ..."), a
@@ -311,6 +312,10 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   badge) goes up by ONE per tool call, and only when a real image (not offline-svg) was generated for a requested angle.
   Over the cap, reusable angles are still sent, nothing is generated, and `mockupCapMessage` follows.
 - Background angle renders skip angles whose render is still current.
+- Spec confirmation (lock) renders `confirmationMockupAngles()` in ONE batched call
+  (`generate_mockup_tool({ angles: [1, 2, 3] })`, one render round): wallets closed + open interior + stitch & edge macro,
+  bags their pair, footwear / furniture / custom hero + macro. The model passes `angles` (array) too and must never call
+  the tool once per angle. Each angle is still its own image request inside that call (image models return one image).
 - Revisions: after the client has seen a draft, a change request (`CHANGE_REQUEST`: ganti / ubah / jadiin / tambah /
   hapus / ga usah ...) re-renders in the same turn: the reply acknowledges it (`composeReply({ mockupComing })`, template
   "Siap kak, gambarnya aku sesuaikan dulu ya."), then the tool runs. A change the spec captured re-renders the views it

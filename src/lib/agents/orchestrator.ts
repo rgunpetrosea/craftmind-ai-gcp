@@ -5,7 +5,7 @@ import { executeGenerateMockupTool, type MockupToolArgs } from '@/lib/agents/too
 import { isGenericMaterial, resolveGenericMaterial } from '@/lib/agents/inventory-agent';
 import { getStore } from '@/lib/gcp/firestore';
 import { currentAngles, renderRemainingAnglesInBackground, reusableRender } from '@/lib/mockups';
-import { defaultMockupAngles } from '@/lib/spec/angles';
+import { confirmationMockupAngles, defaultMockupAngles, MOCKUP_ANGLES } from '@/lib/spec/angles';
 import {
   constructionDef,
   mergeCustomFields,
@@ -580,9 +580,11 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const spec = finalizeSpecifications(spec0, preset.defaults);
   const specChanged = JSON.stringify(spec) !== JSON.stringify(known);
   const needsBuild = specChanged || order.pattern_and_bom.components_breakdown.length === 0;
-  // A new picture is needed when the client asks for one, or when the locked spec looks different from the last render
-  // of any default angle (a draft sent earlier that still shows this spec is reused, not paid for twice).
-  const looksDifferent = defaultMockupAngles(spec.category, spec.construction_type).some((a) => !reusableRender(order, a, spec));
+  // Spec confirmed → the full set in ONE batched tool call: closed + open interior + stitch & edge macro for wallets
+  // (bags: their pair; footwear / furniture / custom: hero + macro). Angles whose earlier render still shows this spec
+  // are re-sent, not paid for twice; a new picture is needed when the client asks for one or any of them changed.
+  const confirmationSet = confirmationMockupAngles(spec.category, spec.construction_type);
+  const looksDifferent = confirmationSet.some((a) => !reusableRender(order, a, spec));
   const wantsRender = visualRequest || revisionRequest || (needsBuild && looksDifferent);
 
   let patch: Partial<OrchestratorFields> = {
@@ -609,9 +611,9 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
         : 'Noted kak, sudah kami teruskan ke crafter.';
   const sent = await say(reply, true);
   if (sent && wantsRender) {
-    // renders the default angles that changed (wallets: closed + open interior), re-sends the rest, then the crafter's
-    // remaining review angles in the background (or the hand-off message once the render cap is reached)
-    const tool = await executeGenerateMockupTool(orderId, profile, mockupArgs());
+    // one render round for the whole set (or the hand-off message once the render cap is reached); any review angle
+    // outside the set (a bag's side profile) follows in the background for the crafter
+    const tool = await executeGenerateMockupTool(orderId, profile, mockupArgs({ angles: confirmationSet.map((a) => MOCKUP_ANGLES.indexOf(a) + 1) }));
     if (tool.status === 'SENT') renderRemainingAnglesInBackground(orderId);
   } else if (sent && needsBuild && (latest.media_assets.mockup_angles?.length ?? 0) < 3) {
     // the draft is reused: only the crafter's review angles are missing (current ones are skipped)
