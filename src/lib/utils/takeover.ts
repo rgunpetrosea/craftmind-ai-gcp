@@ -40,14 +40,15 @@ export function isFrustrated(text: string | undefined): boolean {
 export const PARTIAL_PAUSE_MINUTES = Number(process.env.PARTIAL_PAUSE_MINUTES ?? 30);
 export const CONFUSION_STRIKE_LIMIT = Number(process.env.CONFUSION_STRIKE_LIMIT ?? 3);
 
+/** Templates: `{{active_crafter_name}}` is bound to the order's crafter profile (`renderTemplate` in spec/guardrails.ts). */
 export const HANDOFF_MESSAGES: Record<EscalationReason | 'NON_STANDARD', string> = {
-  CLIENT_REQUEST: 'Baik kak, chatnya kami teruskan ke crafter kami. Mohon ditunggu sebentar ya.',
-  CONFUSION_RULE: 'Mohon maaf kak, biar nggak salah paham, crafter kami langsung bantu kakak di sini ya.',
+  CLIENT_REQUEST: 'Baik kak, chatnya kami teruskan ke {{active_crafter_name}}. Mohon ditunggu sebentar ya.',
+  CONFUSION_RULE: 'Mohon maaf kak, biar nggak salah paham, {{active_crafter_name}} langsung bantu kakak di sini ya.',
   CRAFTER_OVERRIDE: '',
   /** Profile-specific texts for these two come from spec/guardrails.ts (sessionCapMessage / loopHandoverMessage). */
   SESSION_LIMIT: '',
   /** Non-standard request (escalated with reason CLIENT_REQUEST). */
-  NON_STANDARD: 'Untuk permintaan ini perlu dicek langsung oleh crafter kami ya kak. Kami teruskan sekarang, mohon ditunggu sebentar.',
+  NON_STANDARD: 'Untuk permintaan ini perlu dicek langsung oleh {{active_crafter_name}} ya kak. Kami teruskan sekarang, mohon ditunggu sebentar.',
 };
 
 /** Returns the trigger that matched (keyword, phrase or crafter name), or null. */

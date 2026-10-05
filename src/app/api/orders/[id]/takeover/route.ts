@@ -31,8 +31,10 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
     await Promise.all(
       messages.filter((m) => m.awaiting_crafter_review).map((m) => store.updateMessage(id, m.id, { awaiting_crafter_review: false })),
     );
+    // Resume clears the loop / unproductive-chat state completely: escalation reason + note (setAutomationMode above,
+    // which removes the dashboard badge) and the strike counter, so the next debounced turn starts from 0.
     const conversation = await store.getConversation(order.client_info.phone_number);
-    if (conversation?.confusion_strikes) await store.saveConversation({ ...conversation, confusion_strikes: 0 });
+    if (conversation) await store.saveConversation({ ...conversation, confusion_strikes: 0, updated_at: new Date().toISOString() });
     // Catch up on an unanswered client message.
     if (messages.at(-1)?.sender === 'CLIENT' && order.session_state !== 'APPROVED') {
       void runOrchestrator(id).catch((err) => console.error('[takeover] resume run failed:', err));
@@ -41,5 +43,5 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
     getDebouncer().cancel(id);
   }
 
-  return Response.json({ order });
+  return Response.json({ order, ...(mode === 'AI_COPILOT' && { loop_strikes: 0 }) });
 }

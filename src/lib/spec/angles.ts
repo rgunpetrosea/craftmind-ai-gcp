@@ -119,12 +119,16 @@ export function angleForRequest(text: string, category: CraftCategory, construct
   return undefined;
 }
 
+/** Products whose outside and inside are designed separately (emboss / two-tone outside, card slots / lining inside). */
+const PAIRED_CATEGORIES = new Set<CraftCategory>(['SMALL_GOODS', 'BAG']);
+
 /**
- * Angles a mockup round shows by default. Wallets / card holders always include the open interior (ANGLE_2): the card
- * slots are what the client needs to check. Other categories start with the hero view.
+ * Angles a mockup round shows by default. Wallets, card holders and bags always get the closed exterior AND the open
+ * interior (wallets: ANGLE_2, bags: ANGLE_3) as one paired render, so the client sees the card slots / lining too.
+ * Footwear, furniture and custom items start with the hero view.
  */
 export function defaultMockupAngles(category: CraftCategory, construction?: ConstructionType): MockupAngle[] {
-  const interior = category === 'SMALL_GOODS' ? angleForScope(category, 'INTERIOR', construction) : undefined;
+  const interior = PAIRED_CATEGORIES.has(category) ? angleForScope(category, 'INTERIOR', construction) : undefined;
   return interior ? ['ANGLE_1', interior] : ['ANGLE_1'];
 }
 

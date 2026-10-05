@@ -255,11 +255,17 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 - AI mockups: at most `MAX_AI_MOCKUP_RENDERS` (2) render rounds per session that actually generated an image (unchanged
   angles are re-sent for free, see v14). Beyond that no image API call; the reply carries `mockupCapMessage`. Crafter dashboard
   renders are capped per order by `MAX_CRAFTER_RENDERS_PER_ORDER` (429).
-- Loop detector (reason CONFUSION_RULE): consecutive client messages that add no product detail and settle nothing are
-  strikes (frustration always counts; answered questions and post-spec-card small talk don't); `LOOP_STRIKE_LIMIT` (3) →
-  `loopHandoverMessage`. Off-topic / injection messages count as strikes too.
+- Loop detector (reason CONFUSION_RULE): evaluated once per DEBOUNCED turn on the combined burst (+1 per turn, never per
+  raw message). Design context resets the counter to 0: feedback / corrections ("salah", "revisi", "maksudnya ..."), a
+  change request, product / material / colour / feature / size words (`hasDesignContext()` in `spec/guardrails.ts`),
+  a new or settled spec detail, or a question we answer. Strikes: off-topic / injection / nonsense turns, turns with no
+  spec context while gathering, frustration with nothing about the design ("ga nyambung"). Post-spec-card small talk is
+  neither. `LOOP_STRIKE_LIMIT` (3) consecutive strikes → `loopHandoverMessage`. "Resume AI" (dashboard or simulator
+  toggle) clears the reason, note and strike counter.
+- Hand-over texts are templates with the tenant variable `{{active_crafter_name}}` (`HANDOVER_TEMPLATES`,
+  `HANDOFF_MESSAGES`), bound per order by `renderTemplate(template, profile)` to the crafter profile's honorific + name
+  (fallback "crafter kami"). Never hardcode a crafter name.
 - Silent background parsing stops after `SILENT_PARSE_CAP` (20) per session.
-- Handover texts use the profile's `crafter_honorific` + `crafter_name` ("Mas Fendy").
 
 ## Draft Mockups In Chat & Automatic BOM (v12)
 - Mockups are NOT an after-confirmation / production step. `generate_mockup_tool` (`src/lib/agents/tools.ts`) is declared to
@@ -297,13 +303,33 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   `mockupToolDeclaration(spec)`), `adjustment` (visual change the spec can't hold). Target slots (`targetAngles()`):
   explicit view in the client's words (`angleForRequest()` in `spec/angles.ts`: "posisi terbuka" / "bagian dalam" /
   "slot kartu" → the category's INTERIOR slot, e.g. ANGLE_2 for wallets, ANGLE_3 for bags; "detail jahitan" → DETAIL;
-  "tampak luar" → ANGLE_1) > the model's `angle_id` > `defaultMockupAngles()` (SMALL_GOODS: ANGLE_1 + ANGLE_2 open
-  interior, so the card slots are visible; others: ANGLE_1). `VISUAL_REQUEST` also matches view requests.
+  "tampak luar" → ANGLE_1) > the model's `angle_id` > `defaultMockupAngles()` (SMALL_GOODS and BAG: a PAIRED render of
+  the closed exterior + the open interior, ANGLE_2 for wallets / ANGLE_3 for bags; others: ANGLE_1). `VISUAL_REQUEST`
+  also matches view requests.
 - Quota: an angle whose render signature still matches and gets no `adjustment` is re-sent without an image call
   (`reusableRender()`; an offline concept left by a failed call is retried). `mockup_render_count` (the "AI renders X/2"
   badge) goes up by ONE per tool call, and only when a real image (not offline-svg) was generated for a requested angle.
   Over the cap, reusable angles are still sent, nothing is generated, and `mockupCapMessage` follows.
 - Background angle renders skip angles whose render is still current.
+- Revisions: after the client has seen a draft, a change request (`CHANGE_REQUEST`: ganti / ubah / jadiin / tambah /
+  hapus / ga usah ...) re-renders in the same turn: the reply acknowledges it (`composeReply({ mockupComing })`, template
+  "Siap kak, gambarnya aku sesuaikan dulu ya."), then the tool runs. A change the spec captured re-renders the views it
+  touches; one it didn't is stored as a `Revisi visual N` custom field (kept for production and later renders) and sent
+  as the adjustment, re-rendering only the view it names ("slot kartu" → interior). Counts as progress, not a loop strike.
+- Custom fields reach the image prompt (`custom_requests` in `visualSpec`) with a zone from `customFieldZone()`, so
+  interior requests never leak into closed views and every custom request changes the right angle's signature.
+- Frame & orientation (`mockupFrame()` in `visual-agent.ts`): a tall small good (LONG_BIFOLD_WALLET, a closed face
+  ≥ 1.4x as tall as wide, or "panjang / long / tall" in the spec) renders VERTICAL: `imageConfig.aspectRatio` 2:3 for closed
+  and detail views, 3:4 for the opened spread (Imagen: 3:4), plus a `FRAMING:` prompt line ("tall long bifold wallet,
+  vertical orientation, breast pocket wallet"). Everything else (incl. the landscape zip-around) stays 1:1. A non-square
+  frame is part of the render signature.
+- LONG_BIFOLD_WALLET (`categories/small-goods.ts`, before BIFOLD_WALLET): "dompet/bifold panjang", "long wallet",
+  "breast pocket", "dompet jas"; "panjang 11 cm" is a measurement, not this. A bifold the client calls long ("yang panjang
+  aja") is upgraded in `runIntakeAgent`. `completeForBom` gives it 9.5 x 2 x 19 cm (REFERENCE_BASED "ukuran standar dompet
+  panjang") unless the client typed cm, replacing an inherited short-bifold size.
+- Images are sent as each angle finishes (`renderMockupAngles({ onRender })`), in slot order; a render error sends a short
+  apology and notifies the crafter instead of leaving the chat on the acknowledgment. The cap message is sent once.
+  The simulator groups consecutive AI images into one album bubble.
 
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.

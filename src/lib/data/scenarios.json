@@ -245,8 +245,8 @@
     "category": "BAG",
     "input_type": "text_only",
     "needs_attachment": false,
-    "message": "Aduh kok tetep salah ya bentuk penutupnya, bukan yang kayak gitu maksudku dari tadi...",
-    "notes": "Terjadi revisi berturut-turut >3x sehingga AI menyerahkan obrolan ke Crafter (Human).",
+    "message": "ya gitu deh pokoknya, hehe",
+    "notes": "3 giliran chat berturut-turut (setelah debounce) tanpa konteks desain sehingga AI menyerahkan obrolan ke Crafter (Human). Koreksi seperti 'salah' atau 'revisi' tidak dihitung.",
     "expected": {
       "category": "BAG",
       "dimension_mode": null,
@@ -266,17 +266,17 @@
       },
       {
         "as": "CLIENT",
-        "text": "Bukan gitu mas maksudnya penutupnya",
+        "text": "hmm",
         "phase": "setup"
       },
       {
         "as": "CLIENT",
-        "text": "Masih salah mas, bukan yang itu",
+        "text": "wkwkwk",
         "phase": "setup"
       },
       {
         "as": "CLIENT",
-        "text": "Aduh kok tetep salah ya bentuk penutupnya, bukan yang kayak gitu maksudku dari tadi...",
+        "text": "ya gitu deh pokoknya, hehe",
         "phase": "scenario"
       }
     ]

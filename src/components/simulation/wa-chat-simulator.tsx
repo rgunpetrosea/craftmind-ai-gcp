@@ -253,8 +253,8 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
             Kirim pesan sebagai klien untuk memulai simulasi 👇
           </p>
         )}
-        {messages.map((m) => (
-          <Bubble key={m.id} message={m} />
+        {groupAlbums(messages).map((g) => (
+          g.length > 1 ? <Album key={g[0].id} messages={g} /> : <Bubble key={g[0].id} message={g[0]} />
         ))}
         {data?.ai_pending && (
           <div className="flex w-fit items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs text-stone-500 shadow-sm">
@@ -357,6 +357,47 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
           </button>
         </form>
         {notice && <p className="text-[11px] text-stone-600">{notice}</p>}
+      </div>
+    </div>
+  );
+}
+
+const isAiImage = (m: ChatMessage) => m.sender === 'AI' && m.media_type === 'image' && Boolean(m.media_url);
+
+/** Consecutive AI images (a paired closed + open mockup) are shown together, like a WhatsApp album. */
+function groupAlbums(messages: ChatMessage[]): ChatMessage[][] {
+  const groups: ChatMessage[][] = [];
+  for (const m of messages) {
+    const last = groups.at(-1);
+    if (last && isAiImage(m) && isAiImage(last[0])) last.push(m);
+    else groups.push([m]);
+  }
+  return groups;
+}
+
+function Album({ messages }: { messages: ChatMessage[] }) {
+  const [first] = messages;
+  // the first caption may carry an intro sentence before the view label
+  const intro = first.text?.includes('\n\n') ? first.text.slice(0, first.text.lastIndexOf('\n\n')) : '';
+  const labelOf = (m: ChatMessage) => (m === first && intro ? (m.text ?? '').slice(intro.length).trim() : m.text);
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[88%] rounded-lg bg-white px-2.5 py-1.5 text-[13px] leading-snug shadow-sm">
+        <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+          <Bot className="h-3 w-3" />
+          AI Co-Pilot
+        </p>
+        <div className={cn('mb-1 grid gap-1', messages.length > 1 && 'grid-cols-2')}>
+          {messages.map((m) => (
+            <a key={m.id} href={m.media_url} target="_blank" rel="noreferrer" className="block">
+              {/* eslint-disable-next-line @next/next/no-img-element -- data URLs / GCS objects */}
+              <img src={m.media_url} alt={labelOf(m) ?? 'mockup'} className="aspect-square w-full rounded-md bg-stone-100 object-cover" />
+              {labelOf(m) && <span className="mt-0.5 block text-[10px] text-stone-500">{labelOf(m)}</span>}
+            </a>
+          ))}
+        </div>
+        {intro && <WaText text={intro} />}
+        <p className="mt-0.5 text-right text-[10px] text-stone-400">{time(messages.at(-1)!.created_at)}</p>
       </div>
     </div>
   );

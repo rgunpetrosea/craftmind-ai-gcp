@@ -11,7 +11,7 @@ import {
 } from './common';
 
 const cards = (text: string) => parseCount(text, 'kartu|card');
-const WALLETS = ['FLAT_CARD_HOLDER', 'PATTERNED_CARD_HOLDER', 'BIFOLD_WALLET', 'TRIFOLD_WALLET', 'ACCORDION_WALLET', 'ZIP_AROUND_LONG_WALLET'] as const;
+const WALLETS = ['FLAT_CARD_HOLDER', 'PATTERNED_CARD_HOLDER', 'BIFOLD_WALLET', 'LONG_BIFOLD_WALLET', 'TRIFOLD_WALLET', 'ACCORDION_WALLET', 'ZIP_AROUND_LONG_WALLET'] as const;
 const hasZip = (a: SmallGoodsAttributes, c: string) => c === 'ZIP_AROUND_LONG_WALLET' || a.coin_zip_pocket;
 
 export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
@@ -64,6 +64,18 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       vision_cue: 'Wallet with a Z-folded pleated gusset that expands like an accordion, with stacked card pockets.',
       defaults: { dimensions_cm: { length: 11, width: 3, height: 8 }, front_slots: 4, back_slots: 4, cash_compartments: 1 },
       labor_factor: 1.2,
+    },
+    {
+      // before BIFOLD_WALLET (first match wins) and after the zip-around (a long wallet WITH a zipper is that one).
+      // "panjang" followed by a number is a measurement ("dompet panjangnya 11 cm"), not this form factor.
+      id: 'LONG_BIFOLD_WALLET',
+      label: 'Long bifold wallet (tall, breast pocket)',
+      detect:
+        /(dompet|wallet|bi[\s-]?fold)[^.\d]{0,15}\b(panjang|long|tall)\b(?![a-z]*\s*\d)|\b(long|tall)[\s-]?(bi[\s-]?fold|wallet)\b|breast[\s-]?pocket|suit[\s-]?wallet|coat[\s-]?wallet|dompet jas|dompet tinggi/i,
+      vision_cue:
+        'TALL long bifold (breast-pocket / suit wallet): folds ONCE along a centre spine like a bifold, but closed it stands about twice as tall as it is wide (~9.5 x 19 cm, vertical orientation). Stacked card slots and a full-height cash compartment inside; no zipper around the edge.',
+      defaults: { dimensions_cm: { length: 9.5, width: 2, height: 19 }, front_slots: 4, back_slots: 4, cash_compartments: 2 },
+      labor_factor: 1.3,
     },
     {
       id: 'BIFOLD_WALLET',
@@ -219,6 +231,6 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
     { id: 'zipper', label: 'Sleting', ask: 'aksesoris logam resletingnya mau warna emas, silver, atau hitam', required: false, fields: ['zipper'], applies_to: ['ZIP_AROUND_LONG_WALLET'], deferrable: true },
     { id: 'edge', label: 'Pinggiran', ask: 'pinggiran kulitnya mau dibuat licin mengkilap, dicat rapi senada, atau dibiarkan natural', required: false, fields: ['edge_finish'], deferrable: true },
     { id: 'thread', label: 'Benang', ask: 'jahitannya mau warna senada biar halus, atau kontras biar kelihatan', required: false, fields: ['thread_color', 'thread_material'], deferrable: true },
-    { id: 'lining', label: 'Lining', ask: 'bagian dalamnya mau dilapis bahan halus, atau dibiarkan kulit polos biar lebih tipis', required: false, fields: ['lining'], applies_to: ['BIFOLD_WALLET', 'TRIFOLD_WALLET', 'ACCORDION_WALLET', 'ZIP_AROUND_LONG_WALLET', 'PASSPORT_COVER'], deferrable: true },
+    { id: 'lining', label: 'Lining', ask: 'bagian dalamnya mau dilapis bahan halus, atau dibiarkan kulit polos biar lebih tipis', required: false, fields: ['lining'], applies_to: ['BIFOLD_WALLET', 'LONG_BIFOLD_WALLET', 'TRIFOLD_WALLET', 'ACCORDION_WALLET', 'ZIP_AROUND_LONG_WALLET', 'PASSPORT_COVER'], deferrable: true },
   ],
 };

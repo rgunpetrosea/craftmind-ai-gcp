@@ -8,6 +8,7 @@ import { currentAngles, renderRemainingAnglesInBackground, reusableRender } from
 import { defaultMockupAngles } from '@/lib/spec/angles';
 import {
   constructionDef,
+  mergeCustomFields,
   emptySpecifications,
   finalizeSpecifications,
   isClassified,
@@ -22,7 +23,9 @@ import {
 import { findGlossary } from '@/lib/spec/glossary';
 import {
   LOOP_STRIKE_LIMIT,
+  hasDesignContext,
   loopHandoverMessage,
+  renderTemplate,
   mismatchMessage,
   refusalMessage,
   SESSION_TURN_CAP,
@@ -31,6 +34,7 @@ import {
   SILENT_PARSE_CAP,
   turnWarningMessage,
   VISUAL_REQUEST,
+  CHANGE_REQUEST,
 } from '@/lib/spec/guardrails';
 import { isWithinScope, requestedItemLabel } from '@/lib/spec/offerings';
 import { specCardText } from '@/lib/spec/describe';
@@ -184,6 +188,16 @@ function completeForBom(raw: Specifications, inventory: InventoryItem[], preset:
   const spec = normalizeSpecifications(structuredClone(raw));
   const a = spec.attributes as unknown as Record<string, unknown>;
   const def = (constructionDef(spec.construction_type)?.defaults ?? {}) as { dimensions_cm?: Dimensions };
+  // A long bifold always carries its tall size, so the spec form, the BOM and the mockup never fall back to a short
+  // bifold: no size yet, or a short-wallet size the client never typed in cm → the long wallet standard (9.5 x 2 x 19).
+  if (spec.construction_type === 'LONG_BIFOLD_WALLET' && def.dimensions_cm && spec.dimension_mode !== 'EXACT_CM') {
+    const size = a.dimensions_cm as Dimensions | undefined;
+    if (!size || Math.max(size.length, size.height) < 15) {
+      a.dimensions_cm = { ...def.dimensions_cm };
+      spec.dimension_mode = 'REFERENCE_BASED';
+      spec.reference_object = 'ukuran standar dompet panjang (long bifold)';
+    }
+  }
   const d = a.dimensions_cm as Dimensions | undefined;
   if (d && def.dimensions_cm && (d.length > 0 || d.width > 0 || d.height > 0) && spec.dimension_mode !== 'PENDING_SITE_VISIT') {
     if (FLAT_GOODS.has(spec.construction_type) && d.width === 0 && d.height >= 1) {
@@ -344,6 +358,23 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const clientFinished = intake.client_finished || wasLocked;
   const plan = planConversation(spec0, progress, clientFinished);
 
+  // --- Revision: the client asks to change a draft they have already seen ("ganti slot kartunya jadi miring") ---------
+  // It is re-rendered right away. When the spec captured the change (a field or a custom request) the changed views
+  // re-render from it; otherwise the client's own words become a custom request on the spec (kept for production and
+  // every later render) and go to the image model as the adjustment for this one.
+  const draftShown = messages.some((m) => m.sender === 'AI' && m.media_type === 'image');
+  const revisionRequest = draftShown && isClassified(spec0) && intake.message_intent === 'CRAFT_REQUEST' && CHANGE_REQUEST.test(burstText);
+  const visualChanged =
+    revisionRequest &&
+    defaultMockupAngles(spec0.category, spec0.construction_type).some(
+      (a) => !reusableRender(order, a, finalizeSpecifications(spec0, presetFor(spec0.category).defaults)),
+    );
+  const revisionAdjustment = revisionRequest && !visualChanged ? burstText.replace(/\s+/g, ' ').trim() : undefined;
+  if (revisionAdjustment && !spec0.custom_fields.some((f) => f.value.toLowerCase() === revisionAdjustment.toLowerCase())) {
+    const n = spec0.custom_fields.filter((f) => f.label.startsWith('Revisi visual')).length + 1;
+    spec0.custom_fields = mergeCustomFields(spec0.custom_fields, [{ label: `Revisi visual ${n}`, value: revisionAdjustment }]);
+  }
+
   /**
    * Every AI reply goes through here: it is charged to the turn budget, and on the warning turn an intake that is still
    * incomplete gets the "let me connect you to the crafter" bubble (and the crafter is notified).
@@ -364,18 +395,24 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   };
 
   // --- Cost guardrail 3: loop / unproductive-chat detector ---------------------------------------------------
-  // A client message that adds no new product detail (material, size, colours or any other spec value, budget,
-  // deadline) and settles nothing is a strike; so is "salah / bukan gitu". Questions we answer are dialogue, not a loop; after the spec card,
-  // small talk ("makasih kak") only counts when it is frustrated. The turn budget bounds everything else.
+  // Evaluated once per DEBOUNCED turn on the combined burst, never per raw message: three quick messages are one turn.
+  // A turn is productive when it carries design context or feedback (product / material / colour / feature words,
+  // sizes, "salah", "revisi", "ganti ..."), adds or settles a spec detail, or asks a question we answer: the counter
+  // (`confusion_strikes`) resets to 0 and the revision goes through. A strike is only an off-topic / nonsensical turn,
+  // a turn with no spec context while gathering, or pure frustration with nothing about the design ("ga nyambung").
+  // LOOP_STRIKE_LIMIT strikes in a row hand the chat to the crafter. After the spec card, small talk ("oke kak") is
+  // neither. The turn budget bounds everything else.
   const blockingQuestions = intake.questions.filter((q) => q.kind !== 'PRICE_TIMELINE');
-  const frustrated = isFrustrated(burstText);
   const isCraft = intake.message_intent === 'CRAFT_REQUEST';
+  const designContext = isCraft && hasDesignContext(burstText);
   // "terserah" (deferring topics), answering a topic in everyday words and "itu saja" all move the intake forward too
-  const settledSomething = intake.deferred_topics.length > 0 || answeredDeferrable.length > 0 || intake.client_finished;
-  const newDetails = isCraft && (settledSomething || hasNewProductDetails(known, spec0, order.client_brief, client_brief));
-  const unproductive = frustrated || (!newDetails && !(isCraft && blockingQuestions.length) && !wasLocked);
+  const settledSomething = intake.deferred_topics.length > 0 || answeredDeferrable.length > 0 || intake.client_finished || revisionRequest;
+  const productive =
+    isCraft && (designContext || settledSomething || blockingQuestions.length > 0 || hasNewProductDetails(known, spec0, order.client_brief, client_brief));
+  const frustratedOnly = isFrustrated(burstText) && !designContext;
+  const strike = !isCraft || frustratedOnly || (!productive && !wasLocked);
   if (conversation) {
-    conversation.confusion_strikes = unproductive ? conversation.confusion_strikes + Math.max(1, burst.length) : 0;
+    conversation.confusion_strikes = strike ? conversation.confusion_strikes + 1 : productive ? 0 : conversation.confusion_strikes;
     conversation.updated_at = nowIso();
     await store.saveConversation(conversation);
   }
@@ -386,7 +423,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     });
     const reply = loopHandoverMessage(profile);
     if (!isAiBlocked(latest)) {
-      setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE', undefined, undefined, `${conversation.confusion_strikes} pesan berturut-turut tanpa detail produk baru`);
+      setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE', undefined, undefined, `${conversation.confusion_strikes} giliran chat berturut-turut tanpa konteks desain (off-topic / tidak jelas)`);
       await store.saveOrder(latest);
       await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
       await sendToClient(latest, 'SYSTEM', reply);
@@ -406,8 +443,13 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   // generate_mockup_tool triggers: the client asks for a picture, or the core specification just became complete
   const coreComplete = isClassified(spec0) && plan.missing_required.length === 0;
   const firstCoreComplete = coreComplete && renderCount === 0 && !currentAngles(order).length;
+  const mockupComing = revisionRequest ? 'REVISION' : visualRequest || firstCoreComplete ? 'NEW' : undefined;
   // the client's words decide the view when they asked for a picture ("posisi terbuka" → open interior angle)
-  const mockupArgs = (call?: MockupToolArgs): MockupToolArgs => ({ ...call, ...(visualRequest && { requestText: burstText }) });
+  const mockupArgs = (call?: MockupToolArgs): MockupToolArgs => ({
+    ...call,
+    ...(visualRequest && { requestText: burstText }),
+    ...(revisionAdjustment && !call?.adjustment && { adjustment: revisionAdjustment }),
+  });
 
   // --- Guardrails: off-topic / prompt injection → polite refusal; the spec and brief are left untouched -------
   if (intake.message_intent !== 'CRAFT_REQUEST') {
@@ -449,10 +491,10 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       setAutomationMode(latest, 'FULL_MANUAL', 'CLIENT_REQUEST', undefined, undefined, intake.non_standard_reason);
       await store.saveOrder(latest);
       await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
-      await sendToClient(latest, 'SYSTEM', HANDOFF_MESSAGES.NON_STANDARD);
+      await sendToClient(latest, 'SYSTEM', renderTemplate(HANDOFF_MESSAGES.NON_STANDARD, profile));
       await notifyCrafter(latest, intake.non_standard_reason);
     }
-    return { order: latest, stage: 'ESCALATED', reply: HANDOFF_MESSAGES.NON_STANDARD };
+    return { order: latest, stage: 'ESCALATED', reply: renderTemplate(HANDOFF_MESSAGES.NON_STANDARD, profile) };
   }
 
   // --- Q&A: the client asked what something means / how it will look → answer before locking anything ---
@@ -472,6 +514,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       brief: client_brief,
       profile,
       questions: intake.questions,
+      mockupComing,
     });
     const latest = await commit(orderId, {
       client_brief,
@@ -492,7 +535,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       },
     });
     const sent = await say(reply.text);
-    if (sent && (visualRequest || reply.mockupCall || firstCoreComplete)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
+    if (sent && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
     return { order: latest, stage: sent ? 'ANSWERED' : 'SKIPPED_TAKEOVER', reply: reply.text };
   }
 
@@ -517,6 +560,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       progress,
       brief: client_brief,
       profile,
+      mockupComing,
     });
     const latest = await commit(orderId, {
       client_brief,
@@ -527,7 +571,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       ...autoBom,
     });
     const sent = await say(reply.text);
-    if (sent && (visualRequest || reply.mockupCall || firstCoreComplete)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
+    if (sent && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
     return { order: latest, stage: sent ? 'GATHERING' : 'SKIPPED_TAKEOVER', reply: reply.text };
   }
 
@@ -539,7 +583,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   // A new picture is needed when the client asks for one, or when the locked spec looks different from the last render
   // of any default angle (a draft sent earlier that still shows this spec is reused, not paid for twice).
   const looksDifferent = defaultMockupAngles(spec.category, spec.construction_type).some((a) => !reusableRender(order, a, spec));
-  const wantsRender = visualRequest || (needsBuild && looksDifferent);
+  const wantsRender = visualRequest || revisionRequest || (needsBuild && looksDifferent);
 
   let patch: Partial<OrchestratorFields> = {
     client_brief,
@@ -558,9 +602,11 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const latest = await commit(orderId, patch);
   const reply = needsBuild
     ? specCardText(order.client_info.client_name_wa, spec, { updated: wasLocked })
-    : visualRequest
-      ? 'Siap kak, aku buatin gambarnya dulu ya.'
-      : 'Noted kak, sudah kami teruskan ke crafter.';
+    : revisionRequest
+      ? 'Siap kak, gambarnya aku sesuaikan dulu ya.'
+      : visualRequest
+        ? 'Siap kak, aku buatin gambarnya dulu ya.'
+        : 'Noted kak, sudah kami teruskan ke crafter.';
   const sent = await say(reply, true);
   if (sent && wantsRender) {
     // renders the default angles that changed (wallets: closed + open interior), re-sends the rest, then the crafter's

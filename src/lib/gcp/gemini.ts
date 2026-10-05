@@ -218,14 +218,23 @@ export interface GeneratedImage {
  * Image generation via Gemini multimodal image models (accepts reference images such as the sketch and the previous
  * render). Tries every model in MODEL_CHAINS.image with the usual retry/fallback before giving up.
  */
-export async function generateImageWithGemini(prompt: string, references: Part[] = []): Promise<GeneratedImage> {
+/** Output frame of a render. Gemini image models take all of these; Imagen gets the nearest one it supports. */
+export type ImageAspectRatio = '1:1' | '2:3' | '3:4';
+
+export async function generateImageWithGemini(prompt: string, references: Part[] = [], aspectRatio: ImageAspectRatio = '1:1'): Promise<GeneratedImage> {
   const parts: Part[] = [...references, { text: prompt }];
-  // Images are worth waiting for (billing on): retry rate limits with backoff, and make a second pass over the chain.
-  return withModelFallback(MODEL_CHAINS.image, async (model) => {
-    const response = await getGenAI().models.generateContent({
+  const request = (model: string, withFrame: boolean) =>
+    getGenAI().models.generateContent({
       model,
       contents: [{ role: 'user', parts }],
-      config: { responseModalities: ['IMAGE', 'TEXT'] },
+      config: { responseModalities: ['IMAGE', 'TEXT'], ...(withFrame && { imageConfig: { aspectRatio } }) },
+    });
+  // Images are worth waiting for (billing on): retry rate limits with backoff, and make a second pass over the chain.
+  return withModelFallback(MODEL_CHAINS.image, async (model) => {
+    const response = await request(model, aspectRatio !== '1:1').catch((err) => {
+      // a model that rejects the frame setting still renders (the prompt carries the orientation too)
+      if (aspectRatio !== '1:1' && apiStatus(err) === 400 && /aspect|image_?config/i.test(String((err as Error)?.message))) return request(model, false);
+      throw err;
     });
     for (const part of response.candidates?.[0]?.content?.parts ?? []) {
       if (part.inlineData?.data) return { mimeType: part.inlineData.mimeType ?? 'image/png', base64: part.inlineData.data };
@@ -254,11 +263,12 @@ export function isImagenAvailable(): boolean {
 }
 
 /** Text-to-image via Imagen. */
-export async function generateImageWithImagen(prompt: string): Promise<GeneratedImage> {
+export async function generateImageWithImagen(prompt: string, aspectRatio: ImageAspectRatio = '1:1'): Promise<GeneratedImage> {
   const response = await getGenAI().models.generateImages({
     model: MODELS.imagen,
     prompt,
-    config: { numberOfImages: 1, aspectRatio: '1:1' },
+    // Imagen supports 1:1, 3:4, 4:3, 9:16, 16:9: a 2:3 portrait frame becomes 3:4
+    config: { numberOfImages: 1, aspectRatio: aspectRatio === '2:3' ? '3:4' : aspectRatio },
   });
   const image = response.generatedImages?.[0]?.image;
   if (!image?.imageBytes) throw new Error(`${MODELS.imagen} returned no image`);

@@ -5,6 +5,7 @@ import {
   isGeminiConfigured,
   isImagenAvailable,
   mediaUrlToPart,
+  type ImageAspectRatio,
 } from '@/lib/gcp/gemini';
 import { storeMedia } from '@/lib/gcp/gcs';
 import { compressRender } from '@/lib/utils/image';
@@ -27,6 +28,8 @@ const SHAPE_HINT: Partial<Record<ConstructionType, string>> = {
   FLAT_CARD_HOLDER: 'a single flat card holder (one flat panel, no fold)',
   PATTERNED_CARD_HOLDER: 'a single flat card holder with a decorative engraved / patterned outer face (no fold)',
   BIFOLD_WALLET: 'a bifold wallet (folds once along a centre spine)',
+  LONG_BIFOLD_WALLET:
+    'a tall long bifold wallet, vertical orientation, breast pocket wallet (folds once along a centre spine; closed it stands about twice as tall as it is wide)',
   TRIFOLD_WALLET: 'a trifold wallet (folds twice into three panels)',
   ACCORDION_WALLET: 'an accordion wallet with a pleated expanding gusset',
   ZIP_AROUND_LONG_WALLET: 'a long zip-around wallet, zipper running around three sides',
@@ -40,24 +43,70 @@ const SCENE: Record<CraftCategory, string> = {
   CUSTOM_GENERIC: 'soft-box lighting, neutral seamless backdrop',
 };
 
+/** Words in the spec that say the wallet is long / tall ("dompet panjang", "long", "tall"), not a measurement. */
+const LONG_WORDS = /\b(panjang|long|tall|tinggi)\b(?![a-z]*\s*\d)/i;
+
+export interface MockupFrame {
+  aspect: ImageAspectRatio;
+  /** Orientation instruction added to the prompt (absent for the square default). */
+  framing?: string;
+}
+
+/**
+ * Output frame per product and view. A tall small good (long bifold / breast-pocket wallet, a closed face at least 1.4x
+ * as tall as wide, or "panjang / long / tall" in the spec) gets a VERTICAL frame and an explicit orientation rule, so it is
+ * never squashed into a square short bifold: 2:3 for closed and detail views, 3:4 for the opened spread. A zip-around
+ * long wallet is landscape and keeps the default. Everything else stays 1:1.
+ */
+export function mockupFrame(spec: Specifications, scope: ViewScope = 'EXTERIOR'): MockupFrame {
+  if (spec.category !== 'SMALL_GOODS' || spec.construction_type === 'ZIP_AROUND_LONG_WALLET') return { aspect: '1:1' };
+  const d = (spec.attributes as { dimensions_cm?: { length: number; height: number } }).dimensions_cm;
+  const words = [spec.model_name, spec.notes, spec.reference_object, ...spec.custom_fields.map((f) => `${f.label} ${f.value}`)].join(' ');
+  const tall =
+    spec.construction_type === 'LONG_BIFOLD_WALLET' ||
+    (!!d && d.length > 0 && d.height >= 1.4 * d.length) ||
+    (/WALLET/.test(spec.construction_type) && LONG_WORDS.test(words));
+  if (!tall) return { aspect: '1:1' };
+  const size = d && d.length > 0 && d.height > 0 ? ` (closed about ${d.length} cm wide x ${d.height} cm tall)` : '';
+  return scope === 'INTERIOR' || scope === 'FULL'
+    ? {
+        aspect: '3:4',
+        framing: `VERTICAL frame. Tall long wallet${size}: opened flat, each half is a tall column of stacked card slots; vertical orientation, not a square short bifold.`,
+      }
+    : {
+        aspect: '2:3',
+        framing: `VERTICAL portrait frame (2:3). Tall long bifold wallet${size}, standing upright in vertical orientation like a breast pocket wallet; never a square or short bifold.`,
+      };
+}
+
 /**
  * The spec as the image model sees it, limited to what the view can show: closed / exterior views never receive
  * interior-zone fields (card slots, lining, inner pockets), so they cannot leak into the render.
  */
+/** Free-form client requests about the inside (card slots, lining, inner pockets) only show on interior views. */
+const INTERIOR_CUSTOM = /slot|kartu|card|lining|furing|dalam|inner|inside|interior|saku|kantong|pocket|compartment|sekat|uang|cash|koin|coin|id window|jendela/i;
+
+export function customFieldZone(f: { label: string; value: string }): 'interior' | 'exterior' {
+  return INTERIOR_CUSTOM.test(`${f.label} ${f.value}`) ? 'interior' : 'exterior';
+}
+
 export function visualSpec(spec: Specifications, scope: ViewScope, hardware: string[] = []): Record<string, unknown> {
   const showInterior = scope === 'INTERIOR' || scope === 'FULL';
   const a = spec.attributes as unknown as Record<string, unknown>;
   const zipIsOutside = a.main_closure === 'ZIPPER' || spec.construction_type === 'ZIP_AROUND_LONG_WALLET';
   const fields = describeFields(spec).filter(({ field }) => showInterior || field.zone !== 'interior');
-  return {
+  const out: Record<string, unknown> = {
     product: constructionDef(spec.construction_type)?.label ?? schemaOf(spec.category).noun,
     ...(spec.model_name && { name: spec.model_name }),
     ...Object.fromEntries(fields.map(({ field, text }) => [field.label.toLowerCase(), text])),
     ...(hardware.length && {
       hardware: hardware.filter((h) => showInterior || zipIsOutside || !/zip/i.test(h)).slice(0, 5),
     }),
-    ...(scope === 'FULL' && spec.custom_fields.length && { custom_requests: Object.fromEntries(spec.custom_fields.map((f) => [f.label, f.value])) }),
   };
+  // client requests the schema has no field for ("slot kartu miring", "two-tone"): part of the picture and its signature,
+  // scoped like regular fields so a closed view never shows interior requests
+  const custom = spec.custom_fields.filter((f) => f.value.trim() && (showInterior || customFieldZone(f) !== 'interior'));
+  return custom.length ? { ...out, custom_requests: Object.fromEntries(custom.map((f) => [f.label, f.value])) } : out;
 }
 
 /**
@@ -66,17 +115,21 @@ export function visualSpec(spec: Specifications, scope: ViewScope, hardware: str
  */
 export function mockupSignature(spec: Specifications, angle: MockupAngle = 'ANGLE_1', customPrompt?: string): string {
   const view = customPrompt ? customView(spec.category, angle, spec.construction_type) : angleDef(spec.category, angle, spec.construction_type);
-  return JSON.stringify({ c: spec.construction_type, a: angle, view: view.view, v: visualSpec(spec, view.scope), p: customPrompt ?? '' });
+  const { aspect } = mockupFrame(spec, view.scope);
+  // the frame only joins the signature when it isn't the square default, so existing square renders stay reusable
+  return JSON.stringify({ c: spec.construction_type, a: angle, view: view.view, v: visualSpec(spec, view.scope), p: customPrompt ?? '', ...(aspect !== '1:1' && { f: aspect }) });
 }
 
 export function buildMockupPrompt(spec: Specifications, hardware: string[], view: AngleView, customShot?: string): string {
   const schema = schemaOf(spec.category);
   const label = constructionDef(spec.construction_type)?.label ?? schema.noun;
   const subject = SHAPE_HINT[spec.construction_type] ?? `a handcrafted ${label.toLowerCase()} (${schema.noun})`;
+  const frame = mockupFrame(spec, view.scope);
   return [
     `Studio product photograph of ${subject}.`,
     `PRODUCT SPEC (JSON): ${JSON.stringify(visualSpec(spec, view.scope, hardware))}`,
     `CAMERA / SHOT: ${customShot?.trim() || view.shot}`,
+    frame.framing ? `FRAMING: ${frame.framing}` : '',
     view.isolation ? `STRICT RULE: ${view.isolation}` : '',
     `STYLE: ${SCENE[spec.category]}, photorealistic, no text, no logo watermark.`,
   ]
@@ -150,8 +203,9 @@ export async function runVisualAgent(input: {
   const geminiPrompt = `${instructions.join(' ')}\n${prompt}`.trim();
 
   type Attempt = [MockupEngine, () => ReturnType<typeof generateImageWithImagen>];
-  const gemini: Attempt = ['gemini-image', () => generateImageWithGemini(geminiPrompt, references)];
-  const imagen: Attempt = ['imagen', () => generateImageWithImagen(prompt)];
+  const { aspect } = mockupFrame(input.spec, view.scope);
+  const gemini: Attempt = ['gemini-image', () => generateImageWithGemini(geminiPrompt, references, aspect)];
+  const imagen: Attempt = ['imagen', () => generateImageWithImagen(prompt, aspect)];
   const attempts = isImagenAvailable() ? (references.length ? [gemini, imagen] : [imagen, gemini]) : [gemini];
 
   let lastError: unknown;

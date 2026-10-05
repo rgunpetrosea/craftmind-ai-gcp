@@ -65,25 +65,45 @@ export const SILENT_PARSE_CAP = Number(process.env.SILENT_PARSE_CAP ?? 20);
 /** Dashboard-triggered renders per order (crafter clicks), a safety net against runaway image spend. */
 export const MAX_CRAFTER_RENDERS_PER_ORDER = Number(process.env.MAX_CRAFTER_RENDERS_PER_ORDER ?? 20);
 
-/** "Mas Fendy" */
+/**
+ * The tenant's crafter as the client knows them: honorific + name from the active crafter profile ("Mas Fendy",
+ * "Bu Sari"), or "crafter kami" when the profile has no name. Never hardcode a name in a template.
+ */
 export function crafterLabel(profile: CrafterProfile): string {
-  return [profile.crafter_honorific, profile.crafter_name || 'crafter kami'].filter(Boolean).join(' ');
+  return profile.crafter_name?.trim() ? [profile.crafter_honorific, profile.crafter_name.trim()].filter(Boolean).join(' ') : 'crafter kami';
+}
+
+/** Tenant variable in hand-over templates, bound per order to the active crafter profile. */
+export const ACTIVE_CRAFTER_NAME = '{{active_crafter_name}}';
+
+/** Hand-over templates; `{{active_crafter_name}}` is filled from the order's crafter profile by `renderTemplate`. */
+export const HANDOVER_TEMPLATES = {
+  TURN_WARNING: 'Biar makin cepat dan pas, aku bantu hubungkan langsung ke {{active_crafter_name}} untuk selesaikan detailnya ya kak.',
+  SESSION_CAP: 'Rangkuman obrolan kita sudah tak teruskan ke {{active_crafter_name}} ya kak. Beliau akan langsung melanjutkan chat ini sebentar lagi!',
+  MOCKUP_CAP:
+    'Untuk revisi visual lanjutan, {{active_crafter_name}} yang bakal bantu buatkan sketsa detailnya secara langsung ya kak, supaya lebih akurat secara teknis produksi.',
+  LOOP_HANDOVER:
+    'Sepertinya ada beberapa detail teknis yang perlu didiskusikan langsung nih. Tak hubungkan ke {{active_crafter_name}} ya kak biar dihitung spesifikasi pasnya!',
+} as const;
+
+export function renderTemplate(template: string, profile: CrafterProfile): string {
+  return template.replaceAll(ACTIVE_CRAFTER_NAME, crafterLabel(profile));
 }
 
 export function turnWarningMessage(profile: CrafterProfile): string {
-  return `Biar makin cepat dan pas, aku bantu hubungkan langsung ke ${crafterLabel(profile)} untuk selesaikan detailnya ya kak.`;
+  return renderTemplate(HANDOVER_TEMPLATES.TURN_WARNING, profile);
 }
 
 export function sessionCapMessage(profile: CrafterProfile): string {
-  return `Rangkuman obrolan kita sudah tak teruskan ke ${crafterLabel(profile)} ya kak. Beliau akan langsung melanjutkan chat ini sebentar lagi!`;
+  return renderTemplate(HANDOVER_TEMPLATES.SESSION_CAP, profile);
 }
 
 export function mockupCapMessage(profile: CrafterProfile): string {
-  return `Untuk revisi visual lanjutan, ${crafterLabel(profile)} yang bakal bantu buatkan sketsa detailnya secara langsung ya kak, supaya lebih akurat secara teknis produksi.`;
+  return renderTemplate(HANDOVER_TEMPLATES.MOCKUP_CAP, profile);
 }
 
 export function loopHandoverMessage(profile: CrafterProfile): string {
-  return `Sepertinya ada beberapa detail teknis yang perlu didiskusikan langsung nih. Tak hubungkan ke ${crafterLabel(profile)} ya kak biar dihitung spesifikasi pasnya!`;
+  return renderTemplate(HANDOVER_TEMPLATES.LOOP_HANDOVER, profile);
 }
 
 /**
@@ -92,6 +112,35 @@ export function loopHandoverMessage(profile: CrafterProfile): string {
  */
 export const VISUAL_REQUEST =
   /\b(gambar|gambaran|mockup|render|visual|desain|foto)\w*\b[^.?!\n]{0,30}\b(lagi|revisi|ganti|ubah|baru|lain|dong|lihat|liat|terbuka\w*|tertutup|bagian dalam\w*|dalamnya|interior|slot|samping|detail|jahitan\w*)\b|\b(revisi|ganti|ubah)\b[^.?!\n]{0,15}\b(gambar|mockup|desain|visual)\w*|\b(kirim|kirimin|lihat|liat|tunjuk\w*|tampilkan)\w*\b[^.?!\n]{0,15}\b(gambar|gambaran|mockup|desain|visual|posisi terbuka|terbuka\w*|bagian dalam\w*|dalamnya|interior|slot ?kartu\w*|detail jahitan|tampak)\w*|\b(posisi|kondisi) terbuka\w*\b[^.?!\n]{0,20}\b(gimana|kayak apa|seperti apa|dong)\b/i;
+
+/**
+ * The client asks to change the design ("ganti slot kartunya jadi miring", "embossnya hapus aja", "warnanya dibikin
+ * two-tone"). After a draft was shown this re-renders the mockup with the change.
+ */
+export const CHANGE_REQUEST =
+  /\b(ganti|diganti|gantiin|ubah|diubah|ubahin|revisi|tukar|jadiin|dijadiin|dijadikan|dibikin|dibuat|bikinin|buatin|tambah\w*|kurangi\w*|dikurangi|hapus\w*|dihapus|hilangkan|dihilangkan|ga usah|gak usah|nggak usah|enggak usah|change|make it|replace|remove|add)\b/i;
+
+/** Corrections and feedback on the design: they are revisions, never "unproductive". */
+const DESIGN_FEEDBACK =
+  /\b(salah(?!\s+satu)|keliru|bukan (gitu|begitu|yang itu|kayak gitu)|revisi\w*|koreksi|maksud(nya|ku| saya| aku)|harusnya|seharusnya|mestinya|kurang pas|kurang sesuai)\b/i;
+
+/** Product, material, colour, feature and size vocabulary (Indonesian + English). */
+const DESIGN_ENTITY =
+  /\b(dompet|wallet|bifold|trifold|card ?holder|kartu|slot|tas|bag|ransel|backpack|tote|sling|clutch|folio|pouch|sepatu|shoes?|boots?|sandal|ikat pinggang|sabuk|belt|strap|tali|gelang|meja|kursi|lemari|rak|sofa|kulit|leather|buaya|croc\w*|python|ular|ostrich|suede|nubuck|veg ?-?tan|nappa|epsom|saffiano|pull ?-?up|crazy ?horse|exotic|kayu|jati|mahoni|walnut|besi|warna\w*|gradasi|two[- ]?tone|hitam|coklat|cokelat|navy|merah|hijau|biru|abu|putih|krem|cream|emboss\w*|logo|inisial|grafir|motif|tekstur|jahit\w*|benang|resleting|sleting|zip\w*|kancing|magnet|saku|kantong|pocket|lining|furing|pinggiran|edge|ukuran\w*|panjang|lebar|tinggi|tebal|tipis|besar|kecil|gusset|handle|gagang|gesper|hardware|desain\w*|model\w*|bentuk\w*|gambar\w*|mockup)\b/i;
+
+/**
+ * Does this (debounced, combined) client input carry design context: feedback or corrections, a change request, a
+ * product / material / colour / feature word or a measurement? Then it is a revision or a spec update, not a loop.
+ */
+export function hasDesignContext(text: string): boolean {
+  return (
+    DESIGN_FEEDBACK.test(text) ||
+    CHANGE_REQUEST.test(text) ||
+    DESIGN_ENTITY.test(text) ||
+    /\d+(?:[.,]\d+)?\s*(cm|mm|inch|inci|in)\b/i.test(text) ||
+    Boolean(detectProduct(text).category)
+  );
+}
 
 /** The profile as the model sees it (system context). */
 export function profileContext(profile: CrafterProfile): string {

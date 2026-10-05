@@ -5,6 +5,7 @@ import { getStore } from '@/lib/gcp/firestore';
 import { persistInboundMedia } from '@/lib/gcp/gcs';
 import { createDraftOrder, isOpenOrder } from '@/lib/orders';
 import type { ChatMessage, Conversation, InboundWhatsAppEvent, OrderPayload, WebhookAction } from '@/lib/types';
+import { renderTemplate } from '@/lib/spec/guardrails';
 import { getDebouncer } from '@/lib/utils/debounce';
 import { newId, nowIso } from '@/lib/utils/format';
 import { withSessionLock } from '@/lib/utils/session-lock';
@@ -131,7 +132,7 @@ async function handleEvent(event: InboundWhatsAppEvent, phone: string): Promise<
     debouncer.cancel(order.order_id);
     await store.saveOrder(order);
     await store.appendMessage({ ...inbound, awaiting_crafter_review: true });
-    await sendToClient(order, 'SYSTEM', HANDOFF_MESSAGES.CLIENT_REQUEST);
+    await sendToClient(order, 'SYSTEM', renderTemplate(HANDOFF_MESSAGES.CLIENT_REQUEST, await store.getCrafterProfile(order.crafter_id)));
     await notifyCrafter(order, order.escalation_note ?? 'Klien minta bicara dengan crafter');
     parseSilently(order.order_id, event.text);
     return respond('ESCALATED_TO_CRAFTER', order, { keyword });

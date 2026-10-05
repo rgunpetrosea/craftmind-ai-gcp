@@ -48,6 +48,10 @@ function productShape(spec: Specifications, base: string, shade: string, stitch:
       }).join('');
       return `<rect x="215" y="196" width="250" height="40" rx="3" fill="#e9dcc3"/><rect x="205" y="224" width="270" height="250" rx="16" fill="${base}"/>${slotRects}<rect x="215" y="234" width="250" height="230" rx="10" fill="none" stroke="${stitch}" stroke-width="2" stroke-dasharray="6 5" opacity=".8"/>${mark}`;
     }
+    if (c === 'LONG_BIFOLD_WALLET') {
+      // tall breast-pocket bifold: upright, about twice as tall as wide
+      return `<rect x="250" y="150" width="180" height="350" rx="14" fill="${base}"/><rect x="263" y="163" width="154" height="324" rx="9" fill="none" stroke="${stitch}" stroke-width="2" stroke-dasharray="6 5" opacity=".8"/><line x1="252" y1="152" x2="252" y2="498" stroke="${shade}" stroke-width="6"/>${mark}`;
+    }
     if (c === 'ZIP_AROUND_LONG_WALLET') {
       return `<rect x="120" y="250" width="440" height="200" rx="18" fill="${base}"/><rect x="134" y="264" width="412" height="172" rx="12" fill="none" stroke="${stitch}" stroke-width="2" stroke-dasharray="6 5" opacity=".8"/><path d="M130 256 H550" stroke="#c9a24a" stroke-width="6" stroke-dasharray="3 3"/><rect x="520" y="248" width="26" height="16" rx="3" fill="#c9a24a"/>${mark}`;
     }

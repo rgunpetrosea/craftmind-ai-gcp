@@ -286,6 +286,7 @@ Decide which ONE craft category the conversation is about and, if possible, the 
 Use the photo/sketch first, then the words. Categories and form factors:
 ${visionGuide()}
 Rules: a sleeve with no fold line is FLAT_CARD_HOLDER, never BIFOLD_WALLET. Wallets/card holders are SMALL_GOODS, not BAG.
+A bifold described as long / panjang / tall / breast-pocket / suit wallet is LONG_BIFOLD_WALLET (with a zipper running around it: ZIP_AROUND_LONG_WALLET).
 If the client clearly switched to a different product, classify the NEW product. If nothing is known yet, construction_type = UNSPECIFIED
 and pick the most likely category (CUSTOM_GENERIC if unclear).`;
 
@@ -366,6 +367,9 @@ interface Extraction {
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
+
+/** "yang panjang", "long", "tall" said about the wallet (not a measurement like "panjang 11 cm"). */
+const LONG_WALLET_WORDS = /\b(yang |versi |model )?(panjang|long|tall)\b(?![a-z]*\s*\d)/i;
 
 export async function runIntakeAgent(input: {
   messages: ChatMessage[];
@@ -468,6 +472,11 @@ export async function runIntakeAgent(input: {
     spec = mergeAttributes(spec, heuristicAttributes(spec.category, withoutExplanationQuestions(allClientText)));
     spec = mergeAttributes(spec, heuristicAttributes(spec.category, withoutExplanationQuestions(burstText)));
     if (!alreadyProcessed) spec = applyRelativeEdits(spec, burstText, known);
+  }
+
+  // "yang panjang aja" about a bifold: same category, so the classifier doesn't re-run; upgrade the form factor here
+  if (spec.construction_type === 'BIFOLD_WALLET' && (hinted.construction === 'LONG_BIFOLD_WALLET' || LONG_WALLET_WORDS.test(burstText))) {
+    spec = normalizeSpecifications({ ...spec, construction_type: 'LONG_BIFOLD_WALLET' });
   }
 
   // Explicit cm > site visit > reference table > Gemini's own reference: keeps mode, reference and size consistent.
@@ -618,6 +627,8 @@ export async function composeReply(input: {
   progress?: IntakeProgress;
   brief?: ClientBrief;
   profile?: CrafterProfile;
+  /** generate_mockup_tool runs right after this reply (new draft, or a revision of one the client saw). */
+  mockupComing?: 'NEW' | 'REVISION';
 }): Promise<ComposedReply> {
   const questions = input.questions ?? [];
   // First turn: brand greeting bubble + ONE follow-up bubble (max 2 bubbles).
@@ -632,11 +643,15 @@ export async function composeReply(input: {
     return { text: `${greeting}\n\n${bubbles.length > 1 ? bubbles.at(-1) : (bubbles[0] ?? PRODUCT_QUESTION)}`, mockupCall: body.mockupCall };
   }
   const siteVisit = input.spec.dimension_mode === 'PENDING_SITE_VISIT' ? '\n\nUntuk ukurannya nanti kami jadwalkan survei ukur ke lokasi kakak.' : '';
-  const fallback = questions.length
+  // the images follow this text: say so, so the chat never ends on a bare acknowledgment
+  const mockupAck =
+    input.mockupComing === 'REVISION' ? 'Siap kak, gambarnya aku sesuaikan dulu ya.' : input.mockupComing === 'NEW' ? 'Aku buatin gambaran desainnya dulu ya kak.' : '';
+  const planned = questions.length
     ? [templateAnswer(input.spec, questions), ...questionBubbles(input.plan.ask)].join('\n\n') + siteVisit
     : input.plan.ask.length
       ? (input.firstTurnBody ? questionBubbles(input.plan.ask).join(' ') : templateQuestion(input.clientName, input.plan.ask, input.isFirstTurn)) + siteVisit
       : siteVisit.trim();
+  const fallback = [mockupAck, planned].filter(Boolean).join('\n\n');
   if (!isGeminiConfigured() || (input.plan.ask.length === 0 && questions.length === 0)) return { text: fallback };
   try {
     const topics = input.plan.ask.map((t) => `- ${t.label}: ${t.ask}`).join('\n');
@@ -666,6 +681,9 @@ export async function composeReply(input: {
             (questions.length ? `\nCLIENT QUESTIONS:\n${questions.map((q) => `- (${q.kind}) ${q.text}`).join('\n')}\n` : '') +
             (facts ? `\nGLOSSARY FACTS:\n${facts}\n` : '') +
             (input.brief ? `CLIENT BRIEF (internal): ${JSON.stringify(input.brief)}\n` : '') +
+            (input.mockupComing
+              ? `MOCKUP: ${input.mockupComing === 'REVISION' ? 'an updated picture with the requested change' : 'a draft picture'} is rendered and sent right after your text (do not call generate_mockup_tool again); acknowledge it in one short sentence.\n`
+              : '') +
             `\nALREADY ANSWERED (never ask again):\n${alreadyAnswered(input.spec, input.progress, input.brief) || '- (nothing yet)'}\n` +
             `\nRecent chat:\n${transcriptText(input.messages.slice(-10))}\n\nASK NOW:\n${topics || '- (nothing; just acknowledge)'}`,
         },

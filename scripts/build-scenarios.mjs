@@ -47,8 +47,9 @@ const SCRIPT = {
   'SCN-05': { followups: [DONE, DONE] },
   'SCN-06': { setup: [client('Mau bikin dompet bifold kulit ya mas')] },
   'SCN-07': {
-    // three turns without progress before the CSV message → confusion strike limit (3) is reached on the CSV turn
-    setup: [client('Mau bikin tas selempang kulit pake flap ya'), client('Bukan gitu mas maksudnya penutupnya'), client('Masih salah mas, bukan yang itu')],
+    // A real request, then debounced turns with NO design context (corrections like "salah" / "bukan gitu" are revisions
+    // and reset the counter): two in the setup, the third is the CSV message → loop limit (3) reached on the CSV turn.
+    setup: [client('Mau bikin tas selempang kulit pake flap ya'), client('hmm'), client('wkwkwk')],
   },
   'SCN-08': {
     setup: [

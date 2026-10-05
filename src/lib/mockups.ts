@@ -65,6 +65,16 @@ export interface RenderOptions {
   adjustment?: string;
   /** New custom shot prompts per angle ('' clears the saved prompt and returns the slot to its category view). */
   customPrompts?: Partial<Record<MockupAngle, string>>;
+  /** Called as soon as each angle is rendered (ANGLE_1 first), e.g. to send it to the client without waiting for the set. */
+  onRender?: (render: MockupRender) => Promise<void>;
+}
+
+async function notifyRendered(opts: RenderOptions, render: MockupRender): Promise<void> {
+  try {
+    await opts.onRender?.(render);
+  } catch (err) {
+    console.error(`[mockups] onRender for ${render.angle} failed:`, err);
+  }
 }
 
 export async function renderMockupAngles(orderId: string, opts: RenderOptions = {}): Promise<MockupRender[]> {
@@ -93,6 +103,7 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
   if (requested.includes('ANGLE_1')) {
     const r = await runVisualAgent({ ...common, angle: 'ANGLE_1', customPrompt: prompts.ANGLE_1, previousMockupUrl: anchorUrl });
     results.push(toRender(r, feedbackFor('ANGLE_1'), signatureFor('ANGLE_1')));
+    await notifyRendered(opts, results[0]);
     anchorUrl = r.url;
     // every image model just failed even after retries: don't spend another round on the other angles
     if (r.engine === 'offline-svg' && r.error) offline = { reason: r.error };
@@ -110,10 +121,14 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
           // (an offline SVG anchor is ignored as a reference by mediaUrlToPart)
           consistencyRefUrl: anchorUrl,
           offline,
+        }).then(async (r) => {
+          const render = toRender(r, feedbackFor(r.angle), signatureFor(r.angle));
+          await notifyRendered(opts, render);
+          return render;
         }),
       ),
   );
-  results.push(...others.map((r) => toRender(r, feedbackFor(r.angle), signatureFor(r.angle))));
+  results.push(...others);
 
   // Merge into the latest order so a takeover, edit or another render that landed meanwhile is kept.
   const latest = (await store.getOrder(orderId))!;

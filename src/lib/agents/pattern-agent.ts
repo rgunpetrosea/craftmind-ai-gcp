@@ -62,7 +62,8 @@ function smallGoods(spec: Extract<Specifications, { category: 'SMALL_GOODS' }>, 
       const folds = spec.construction_type === 'TRIFOLD_WALLET' ? 3 : 2;
       add('Exterior shell', 1, dim(L * folds, H));
       if (spec.construction_type === 'ACCORDION_WALLET') add('Accordion gusset', 1, dim(L, H * 0.6));
-      add('Card slot pocket', cards, dim(L - 1, H * 0.45));
+      // a tall long bifold stacks short pockets down each half instead of half-height ones
+      add('Card slot pocket', cards, dim(L - 1, spec.construction_type === 'LONG_BIFOLD_WALLET' ? 6.5 : H * 0.45));
       add('Cash compartment panel', a.cash_compartments, dim(L * 2 - 1, H - 0.5));
       add('ID window frame', a.id_window ? 1 : 0, dim(L - 2, H * 0.5));
       if (lined) add('Interior lining', 1, dim(L * folds, H));
