@@ -41,11 +41,13 @@ export const PARTIAL_PAUSE_MINUTES = Number(process.env.PARTIAL_PAUSE_MINUTES ??
 export const CONFUSION_STRIKE_LIMIT = Number(process.env.CONFUSION_STRIKE_LIMIT ?? 3);
 
 export const HANDOFF_MESSAGES: Record<EscalationReason | 'NON_STANDARD', string> = {
-  CLIENT_REQUEST: 'Baik kak, percakapan ini kami teruskan ke crafter kami. Mohon ditunggu sebentar ya 🙏',
-  CONFUSION_RULE: 'Mohon maaf kak, supaya tidak salah paham, crafter kami akan langsung membantu kakak di sini ya 🙏',
+  CLIENT_REQUEST: 'Baik kak, chatnya kami teruskan ke crafter kami. Mohon ditunggu sebentar ya.',
+  CONFUSION_RULE: 'Mohon maaf kak, biar nggak salah paham, crafter kami langsung bantu kakak di sini ya.',
   CRAFTER_OVERRIDE: '',
+  /** Profile-specific texts for these two come from spec/guardrails.ts (sessionCapMessage / loopHandoverMessage). */
+  SESSION_LIMIT: '',
   /** Non-standard request (escalated with reason CLIENT_REQUEST). */
-  NON_STANDARD: 'Permintaan khusus ini perlu dicek langsung oleh crafter kami ya kak, supaya hasilnya aman dan sesuai. Kami teruskan sekarang, mohon ditunggu sebentar 🙏',
+  NON_STANDARD: 'Untuk permintaan ini perlu dicek langsung oleh crafter kami ya kak. Kami teruskan sekarang, mohon ditunggu sebentar.',
 };
 
 /** Returns the trigger that matched (keyword, phrase or crafter name), or null. */

@@ -28,10 +28,11 @@ export function specLines(s: Specifications, lang: 'id' | 'en' = 'id'): string[]
 /** WhatsApp spec card sent when the specification is locked. */
 export function specCardText(clientName: string, s: Specifications, opts: { updated?: boolean } = {}): string {
   return [
-    opts.updated ? `Siap kak ${clientName}, spesifikasi sudah kami perbarui ya ✨` : `Siap kak ${clientName}! ✨ Spesifikasi sudah lengkap:`,
-    `• Model: ${modelLine(s)} (${schemaOf(s.category).label_id})`,
-    ...specLines(s),
-    'Crafter kami sedang meninjau desain & penawarannya, akan kami kirim segera ya 🙏',
+    opts.updated ? `Noted kak ${clientName}, ringkasannya sudah kami perbarui:` : `Noted kak ${clientName}, ini ringkasan pesanannya ya:`,
+    '',
+    [`• Model: ${modelLine(s)} (${schemaOf(s.category).label_id})`, ...specLines(s)].join('\n'),
+    '',
+    'Crafter kami cek dulu desain dan harganya. Nanti penawarannya kami kirim di sini.',
   ].join('\n');
 }
 

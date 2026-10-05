@@ -102,11 +102,11 @@ export const FOOTWEAR: CategorySchema<'FOOTWEAR'> = {
     },
   },
   topics: [
-    { id: 'construction', label: 'Model', ask: 'model sepatu (mis. derby, oxford, loafer, chelsea boots)', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
-    { id: 'size', label: 'Ukuran', ask: 'ukuran kaki (EU) dan apakah kaki cenderung lebar', required: true, fields: ['eu_size'], deferrable: false },
-    { id: 'material', label: 'Kulit upper', ask: 'jenis & warna kulit upper (mis. crazy horse cognac, box calf hitam)', required: true, fields: ['upper_material'], deferrable: false },
-    { id: 'sole', label: 'Sol', ask: 'jenis sol (kulit, karet, dainite) dan metode jahit (goodyear welt atau blake)', required: false, fields: ['outsole_type', 'welt_method'], deferrable: true },
-    { id: 'last', label: 'Last', ask: 'bentuk ujung sepatu (round, almond, chisel)', required: false, fields: ['last_shape'], deferrable: true },
-    { id: 'heel', label: 'Hak', ask: 'tinggi hak yang diinginkan (cm)', required: false, fields: ['heel_height_cm'], deferrable: true },
+    { id: 'construction', label: 'Model', ask: 'sepatunya lebih sering dipakai buat acara formal, kerja harian, atau santai', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
+    { id: 'size', label: 'Ukuran', ask: 'biasanya pakai sepatu ukuran berapa, dan kakinya cenderung lebar atau ramping', required: true, fields: ['eu_size'], deferrable: false },
+    { id: 'material', label: 'Kulit upper', ask: 'warnanya mau hitam, coklat, atau warna lain, dan suka kulit yang licin rapi atau yang kesannya rugged', required: true, fields: ['upper_material'], deferrable: false },
+    { id: 'sole', label: 'Sol', ask: 'lebih sering dipakai di dalam ruangan atau banyak jalan di luar', required: false, fields: ['outsole_type', 'welt_method'], deferrable: true },
+    { id: 'last', label: 'Last', ask: 'ujung sepatunya suka yang bulat, agak meruncing, atau kotak', required: false, fields: ['last_shape'], deferrable: true },
+    { id: 'heel', label: 'Hak', ask: 'haknya mau rata atau sedikit tinggi', required: false, fields: ['heel_height_cm'], deferrable: true },
   ],
 };

@@ -1,11 +1,13 @@
 import type { NextRequest } from 'next/server';
-import { isOrchestratorRunning, runOrchestrator } from '@/lib/agents/orchestrator';
+import { unprocessedClientMessages } from '@/lib/agents/intake-agent';
+import { isOrchestratorRunning, runOrchestrator, runSilentParse } from '@/lib/agents/orchestrator';
 import { getStore } from '@/lib/gcp/firestore';
 import { persistInboundMedia } from '@/lib/gcp/gcs';
 import { createDraftOrder, isOpenOrder } from '@/lib/orders';
 import type { ChatMessage, Conversation, InboundWhatsAppEvent, OrderPayload, WebhookAction } from '@/lib/types';
 import { getDebouncer } from '@/lib/utils/debounce';
 import { newId, nowIso } from '@/lib/utils/format';
+import { withSessionLock } from '@/lib/utils/session-lock';
 import {
   detectEscalationKeyword,
   expirePartialPause,
@@ -22,6 +24,9 @@ import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
  *   sender=CLIENT  → escalation keyword? → FULL_MANUAL (CLIENT_REQUEST)
  *                    AI blocked?         → log for crafter review, no AI
  *                    otherwise           → adaptive-debounce, then orchestrator
+ *
+ * Events for one phone number are handled one at a time (session lock); messages buffered within the debounce window
+ * are answered by a single orchestrator run with one combined input.
  */
 
 async function resolveSession(phone: string, clientName: string): Promise<{ order: OrderPayload; conversation: Conversation }> {
@@ -53,6 +58,14 @@ function respond(action: WebhookAction, order: OrderPayload, extra: Record<strin
   });
 }
 
+/**
+ * While a human handles the chat the AI stays quiet but keeps listening: client and crafter messages are batched (same
+ * adaptive debounce, separate key) into a silent parse that updates the spec and client brief for the dashboard.
+ */
+function parseSilently(orderId: string, text?: string) {
+  getDebouncer().schedule(`silent:${orderId}`, { text }, () => runSilentParse(orderId));
+}
+
 export async function POST(request: NextRequest) {
   let event: InboundWhatsAppEvent;
   try {
@@ -64,7 +77,10 @@ export async function POST(request: NextRequest) {
   if (!phone || (!event.text?.trim() && !event.media?.url)) {
     return Response.json({ error: 'phone_number and text or media are required' }, { status: 400 });
   }
+  return withSessionLock(phone, () => handleEvent(event, phone));
+}
 
+async function handleEvent(event: InboundWhatsAppEvent, phone: string): Promise<Response> {
   const store = getStore();
   const debouncer = getDebouncer();
   const targeted = event.sender === 'CRAFTER' && event.order_id ? await store.getOrder(event.order_id) : null;
@@ -83,6 +99,7 @@ export async function POST(request: NextRequest) {
     await sendToClient(order, 'CRAFTER', event.text?.trim() ?? '', event.media && { ...event.media });
     const reviewed = (await store.listMessages(order.order_id)).filter((m) => m.awaiting_crafter_review);
     await Promise.all(reviewed.map((m) => store.updateMessage(order.order_id, m.id, { awaiting_crafter_review: false })));
+    parseSilently(order.order_id, event.text);
     return respond('CRAFTER_REPLY_SENT', order);
   }
 
@@ -116,6 +133,7 @@ export async function POST(request: NextRequest) {
     await store.appendMessage({ ...inbound, awaiting_crafter_review: true });
     await sendToClient(order, 'SYSTEM', HANDOFF_MESSAGES.CLIENT_REQUEST);
     await notifyCrafter(order, order.escalation_note ?? 'Klien minta bicara dengan crafter');
+    parseSilently(order.order_id, event.text);
     return respond('ESCALATED_TO_CRAFTER', order, { keyword });
   }
 
@@ -123,12 +141,20 @@ export async function POST(request: NextRequest) {
 
   if (isAiBlocked(order)) {
     await store.appendMessage({ ...inbound, awaiting_crafter_review: true });
+    parseSilently(order.order_id, event.text);
     return respond('LOGGED_FOR_CRAFTER', order);
   }
 
   await store.appendMessage(inbound);
+  // re-arms the session's buffer window; the flush answers every message buffered since the last reply in one go
   const { flushAt, delayMs } = debouncer.schedule(order.order_id, inbound, () => runOrchestrator(order.order_id));
-  return respond('BUFFERED_FOR_AI', order, { flush_at: flushAt, debounce_ms: delayMs });
+  const buffered = unprocessedClientMessages(await store.listMessages(order.order_id), order.intake?.processed_message_id);
+  return respond('BUFFERED_FOR_AI', order, {
+    flush_at: flushAt,
+    debounce_ms: delayMs,
+    buffered_messages: buffered.length,
+    combined_input: buffered.map((m) => m.text ?? `[${m.media_type ?? 'media'}]`).join(' '),
+  });
 }
 
 /** Session poll for the simulator: ?phone=+62… or ?order_id=ORD-… */
@@ -156,6 +182,10 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const phone = request.nextUrl.searchParams.get('phone');
   if (!phone) return Response.json({ error: 'phone is required' }, { status: 400 });
+  return withSessionLock(phone, () => startFreshDraft(phone));
+}
+
+async function startFreshDraft(phone: string): Promise<Response> {
   const store = getStore();
   const conversation = await store.getConversation(phone);
   if (conversation) getDebouncer().cancel(conversation.active_order_id);

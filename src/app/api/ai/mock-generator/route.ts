@@ -4,6 +4,7 @@ import { runVisualAgent } from '@/lib/agents/visual-agent';
 import { getStore } from '@/lib/gcp/firestore';
 import { renderMockupAngles } from '@/lib/mockups';
 import { MOCKUP_ANGLES } from '@/lib/spec/angles';
+import { MAX_CRAFTER_RENDERS_PER_ORDER } from '@/lib/spec/guardrails';
 import { normalizeSpecifications } from '@/lib/spec/catalog';
 import type { MockupAngle, Specifications } from '@/lib/types';
 
@@ -64,7 +65,18 @@ export async function POST(request: NextRequest) {
   }
   const customPrompts = customPrompt ? { [angles[0]]: customPrompt } : body.clear_custom_prompt ? { [angles[0]]: '' } : undefined;
 
+  // cost guardrail: a generous per-order cap on crafter-triggered renders (the AI's own renders are capped per session)
+  const used = order.media_assets.crafter_render_count ?? 0;
+  if (used >= MAX_CRAFTER_RENDERS_PER_ORDER) {
+    return Response.json(
+      { error: `Render limit reached for this order (${MAX_CRAFTER_RENDERS_PER_ORDER}). Raise MAX_CRAFTER_RENDERS_PER_ORDER if more are needed.` },
+      { status: 429 },
+    );
+  }
+
   const renders = await renderMockupAngles(order.order_id, { angles, adjustment, customPrompts });
+  const latest = await getStore().getOrder(order.order_id);
+  if (latest) await getStore().saveOrder({ ...latest, media_assets: { ...latest.media_assets, crafter_render_count: used + 1 } });
   const offline = renders.filter((r) => r.engine === 'offline-svg');
   return Response.json({
     renders,

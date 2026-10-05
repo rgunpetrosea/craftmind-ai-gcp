@@ -4,7 +4,8 @@
 
 export type SessionState = 'IDLE' | 'REQUIREMENT_GATHERING' | 'PENDING_CRAFTER_APPROVAL' | 'APPROVED';
 export type AutomationMode = 'AI_COPILOT' | 'PARTIAL_PAUSE' | 'FULL_MANUAL';
-export type EscalationReason = 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OVERRIDE';
+/** CONFUSION_RULE = loop / unproductive-chat detector; SESSION_LIMIT = AI turn budget for the session was used up. */
+export type EscalationReason = 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OVERRIDE' | 'SESSION_LIMIT';
 /**
  * Isolated craft categories. Each has its own attribute schema; attributes are never shared or mixed across categories.
  * Field definitions (labels, UI, Gemini schema, parsers) live in `src/lib/spec/categories/*`.
@@ -62,7 +63,7 @@ export type FurnitureConstruction =
   | 'BED_FRAME'
   | 'OTHER_FURNITURE';
 
-export type CustomGenericConstruction = 'APPAREL' | 'JEWELRY' | 'SPORTS_GEAR' | 'HOME_DECOR' | 'OTHER_CUSTOM';
+export type CustomGenericConstruction = 'BELT' | 'WATCH_STRAP' | 'APPAREL' | 'JEWELRY' | 'SPORTS_GEAR' | 'HOME_DECOR' | 'OTHER_CUSTOM';
 
 export interface ConstructionByCategory {
   SMALL_GOODS: SmallGoodsConstruction;
@@ -295,6 +296,8 @@ export interface MockupRender {
   custom_prompt?: string;
   /** Crafter feedback applied to this angle, oldest first. */
   feedback?: string[];
+  /** `mockupSignature()` of the finalized spec this render shows: equal → the render is still current, reuse it. */
+  signature?: string;
 }
 
 export interface MediaAssets {
@@ -310,8 +313,26 @@ export interface MediaAssets {
   mockup_angles?: MockupRender[];
   /** Angles the crafter sent to the client with the formal quotation. */
   approved_angles?: MockupAngle[];
+  /** Dashboard-triggered render requests on this order (cost safety cap, see MAX_CRAFTER_RENDERS_PER_ORDER). */
+  crafter_render_count?: number;
   /** Crafter's saved custom shot direction per angle slot (overrides the category default until cleared). */
   angle_prompts?: Partial<Record<MockupAngle, string>>;
+}
+
+/**
+ * Lifestyle-level brief the intake assistant keeps in the background (never shown to the client). Filled from client AND
+ * crafter messages, including while a human has taken over. Free text in the client's own terms ('' = unknown).
+ */
+export interface ClientBrief {
+  product_type: string;
+  /** What it's for / daily use, e.g. "kerja harian, bawa laptop + charger". */
+  usage_context: string;
+  /** Size in human terms, e.g. "muat laptop 14 inch", "saku celana depan", "untuk 6 orang". */
+  fitment_size: string;
+  style_preference: string;
+  hardware_requirement: string;
+  target_deadline: string;
+  budget: string;
 }
 
 /** Multi-turn requirement-gathering progress, owned by the orchestrator. Topic keys are "<CATEGORY>:<topic id>". */
@@ -328,6 +349,10 @@ export interface IntakeProgress {
   processed_message_id?: string;
   /** Number of AI gathering questions sent. */
   question_rounds: number;
+  /** Cost guardrails (per intake session): AI replies sent, AI mockup render rounds, silent background parses. */
+  session_turn_count?: number;
+  mockup_render_count?: number;
+  silent_parse_count?: number;
 }
 
 export interface OrderPayload {
@@ -350,6 +375,8 @@ export interface OrderPayload {
   pattern_and_bom: PatternAndBom;
   media_assets: MediaAssets;
   intake?: IntakeProgress;
+  /** Background brief, see ClientBrief. */
+  client_brief?: ClientBrief;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +447,27 @@ export interface InventoryItem {
   origin: 'LOCAL' | 'IMPORT';
 }
 
+/**
+ * The host crafter's profile. Loaded before every intake turn: it brands the greeting and defines the domain boundary
+ * (anything outside `allowed_categories` is politely declined). Offering ids are defined in `src/lib/spec/offerings.ts`.
+ */
+export interface CrafterProfile {
+  crafter_id: string;
+  workshop_name: string;
+  /** Offering ids, e.g. ["wallets", "bags", "belts", "watch_straps"]. */
+  allowed_categories: string[];
+  /** What the workshop works in, e.g. "genuine leather / leathergoods". */
+  primary_material: string;
+  contact_whatsapp: string;
+  /** The human who takes over handed-off chats, e.g. "Fendy". */
+  crafter_name: string;
+  /** How clients address them, e.g. "Mas", "Mbak", "Kak" ('' for none). */
+  crafter_honorific: string;
+}
+
+/** What a client message is, before any spec work. */
+export type MessageIntent = 'CRAFT_REQUEST' | 'OFF_TOPIC' | 'PROMPT_INJECTION';
+
 export interface CategoryPreset {
   category: CraftCategory;
   label: string;
@@ -432,6 +480,8 @@ export interface CategoryPreset {
   sourcing_price_idr_per_sqft: number;
   /** On-site measurement fee charged when dimension_mode is PENDING_SITE_VISIT. */
   site_visit_fee_idr?: number;
+  /** House material used when the client only says "kulit" / "kayu" (stock_id of an inventory item). */
+  default_stock_id?: string;
   /** Workshop defaults applied when the client leaves a field open ("terserah"), keyed by attribute name of this category. */
   defaults: Partial<Record<string, string | number | boolean>>;
 }
@@ -451,6 +501,14 @@ export interface IntakeResult {
   questions: ClientQuestion[];
   /** Set when the request is outside the workshop's standard crafting scope (escalated to the crafter). */
   non_standard_reason?: string;
+  /** Brief fields learned this turn (merged into OrderPayload.client_brief). */
+  brief: Partial<ClientBrief>;
+  /** Topic keys ("<CATEGORY>:<topic>") the client has addressed in any wording, anywhere in the chat. */
+  answered_topics: string[];
+  /** Guardrail: is the latest burst a crafting request at all? */
+  message_intent: MessageIntent;
+  /** What the client asked for, in their words, when Gemini judged it outside the workshop (e.g. "meja makan kayu"). */
+  out_of_scope_item?: string;
 }
 
 /** TERMINOLOGY / DESIGN / OTHER block the spec card until answered; PRICE_TIMELINE is answered by the crafter's quote. */
@@ -463,6 +521,7 @@ export interface ClientQuestion {
 
 export interface OrchestratorResult {
   order: OrderPayload;
-  stage: 'GATHERING' | 'ANSWERED' | 'QUOTED' | 'ESCALATED' | 'SKIPPED_TAKEOVER';
+  /** SUPERSEDED: a newer client message arrived mid-run, the reply was dropped. NOTHING_NEW: already answered. */
+  stage: 'GATHERING' | 'ANSWERED' | 'QUOTED' | 'ESCALATED' | 'REFUSED' | 'SKIPPED_TAKEOVER' | 'SUPERSEDED' | 'NOTHING_NEW';
   reply?: string;
 }

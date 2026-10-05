@@ -1,0 +1,16 @@
+{
+  "crafter_id": "crafter-demo-01",
+  "workshop_name": "CraftMind Leather Studio",
+  "allowed_categories": [
+    "wallets",
+    "card_holders",
+    "bags",
+    "belts",
+    "watch_straps",
+    "shoes"
+  ],
+  "primary_material": "genuine leather / leathergoods",
+  "contact_whatsapp": "+6281234500000",
+  "crafter_name": "Fendy",
+  "crafter_honorific": "Mas"
+}

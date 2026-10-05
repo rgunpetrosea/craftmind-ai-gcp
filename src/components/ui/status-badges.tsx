@@ -10,8 +10,9 @@ const STATE_LABEL: Record<SessionState, [string, BadgeTone]> = {
 };
 
 export const ESCALATION_LABEL: Record<EscalationReason, string> = {
+  SESSION_LIMIT: 'AI turn budget used up',
   CLIENT_REQUEST: 'Client asked for a human',
-  CONFUSION_RULE: 'AI confusion rule',
+  CONFUSION_RULE: 'Loop / unproductive chat',
   CRAFTER_OVERRIDE: 'Crafter override',
 };
 

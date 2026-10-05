@@ -1,4 +1,4 @@
-import { GoogleGenAI, type Part, type Schema } from '@google/genai';
+import { GoogleGenAI, type FunctionDeclaration, type Part, type Schema } from '@google/genai';
 import { parseDataUrl } from '@/lib/utils/format';
 
 /**
@@ -175,6 +175,37 @@ export async function generateText(opts: {
     const text = response.text?.trim();
     if (!text) throw new Error(`Empty text response from ${model}`);
     return text;
+  });
+}
+
+/**
+ * Text generation that may call tools (Gemini function calling). Returns the text (possibly empty when the model only
+ * called a tool) and the names + args of the tools it called. With retry + model fallback.
+ */
+export async function generateTextWithTools(opts: {
+  models: readonly string[];
+  systemInstruction: string;
+  parts: Part[];
+  tools: FunctionDeclaration[];
+  temperature?: number;
+}): Promise<{ text: string; calls: Array<{ name: string; args: Record<string, unknown> }> }> {
+  return withModelFallback(opts.models, async (model) => {
+    const response = await getGenAI().models.generateContent({
+      model,
+      contents: [{ role: 'user', parts: opts.parts }],
+      config: {
+        systemInstruction: opts.systemInstruction,
+        temperature: opts.temperature ?? 0.7,
+        tools: [{ functionDeclarations: opts.tools }],
+      },
+    });
+    const calls = (response.functionCalls ?? []).map((c) => ({ name: c.name ?? '', args: (c.args ?? {}) as Record<string, unknown> }));
+    const text = (response.candidates?.[0]?.content?.parts ?? [])
+      .map((p) => p.text ?? '')
+      .join('')
+      .trim();
+    if (!text && !calls.length) throw new Error(`Empty response from ${model}`);
+    return { text, calls };
   });
 }
 

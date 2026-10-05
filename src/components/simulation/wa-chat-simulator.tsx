@@ -108,6 +108,9 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [step, setStep] = useState(0);
   const { data: scenarioData } = usePoll<{ scenarios: Scenario[] }>('/api/scenarios', 60 * 60 * 1000);
+  const { data: profileData } = usePoll<{ profile: { workshop_name: string } }>('/api/crafter-profile', 30 * 1000);
+  const workshop = profileData?.profile.workshop_name ?? 'Workshop';
+  const initials = workshop.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
@@ -125,7 +128,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
     setBusy(true);
     setNotice(null);
     try {
-      const res = await postJson<{ action: string; keyword?: string; debounce_ms?: number }>('/api/webhook/whatsapp', {
+      const res = await postJson<{ action: string; keyword?: string; debounce_ms?: number; buffered_messages?: number }>('/api/webhook/whatsapp', {
         phone_number: phone,
         client_name_wa: name,
         sender,
@@ -133,7 +136,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
       });
       setNotice(
         {
-          BUFFERED_FOR_AI: `Buffered — AI replies in ~${Math.round((res.debounce_ms ?? 0) / 100) / 10}s unless more messages arrive`,
+          BUFFERED_FOR_AI: `Buffered${(res.buffered_messages ?? 1) > 1 ? ` ${res.buffered_messages} messages as one input` : ''} — AI replies once in ~${Math.round((res.debounce_ms ?? 0) / 100) / 10}s unless more messages arrive`,
           ESCALATED_TO_CRAFTER: `Keyword "${res.keyword}" detected → switched to FULL_MANUAL`,
           LOGGED_FOR_CRAFTER: 'AI paused — message logged for crafter review',
           CRAFTER_REPLY_SENT: 'Crafter reply sent — AI auto-paused (partial takeover)',
@@ -208,9 +211,9 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
       {/* Header */}
       <div className="bg-wa-header px-4 py-3 text-white">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-leather-400 text-sm font-bold">CM</div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-leather-400 text-sm font-bold">{initials}</div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">CraftMind Leather Studio</p>
+            <p className="truncate text-sm font-semibold">{workshop}</p>
             <p className="text-[11px] text-emerald-100">{data?.ai_pending ? 'mengetik…' : 'online'}</p>
           </div>
           <button onClick={resetChat} title="New chat" className="rounded-full p-1.5 hover:bg-white/10">

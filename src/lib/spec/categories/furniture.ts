@@ -120,11 +120,11 @@ export const FURNITURE: CategorySchema<'FURNITURE'> = {
     },
   },
   topics: [
-    { id: 'construction', label: 'Jenis', ask: 'jenis furnitur (mis. meja makan, kursi, rak, lemari)', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
-    { id: 'size', label: 'Ukuran', ask: 'ukuran P x L x T (cm); kalau harus pas dengan ruangan, kami bisa jadwalkan survei ukur ke lokasi', required: true, fields: ['dimensions_cm'], deferrable: false },
-    { id: 'material', label: 'Bahan', ask: 'jenis kayu / besi (mis. jati grade A, mahoni, walnut, besi hollow)', required: true, fields: ['primary_material'], deferrable: false },
-    { id: 'finish', label: 'Finishing', ask: 'finishing yang diinginkan (natural oil, PU varnish, duco) dan warnanya', required: false, fields: ['finish_coating'], deferrable: true },
-    { id: 'joinery', label: 'Sambungan', ask: 'tipe sambungan (purus/mortise-tenon untuk dirakit permanen, atau knock-down supaya mudah dikirim)', required: false, fields: ['joinery_type'], deferrable: true },
-    { id: 'upholstery', label: 'Jok', ask: 'pakai jok/busa? kalau iya, bahan kain atau kulit', required: false, fields: ['upholstery'], applies_to: ['CHAIR', 'STOOL', 'BENCH', 'BED_FRAME'], deferrable: true },
+    { id: 'construction', label: 'Jenis', ask: 'mau dibuatkan furnitur apa', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
+    { id: 'size', label: 'Ukuran', ask: 'mau ditaruh di ruangan mana dan untuk berapa orang; kalau harus pas dengan ruangan, kami bisa survei ukur ke lokasi', required: true, fields: ['dimensions_cm'], deferrable: false },
+    { id: 'material', label: 'Bahan', ask: 'suka tampilan kayu yang hangat dan klasik, kayu terang yang modern, atau kombinasi kayu dan besi', required: true, fields: ['primary_material'], deferrable: false },
+    { id: 'finish', label: 'Finishing', ask: 'permukaannya mau natural doff, atau lebih mengkilap dan tahan air', required: false, fields: ['finish_coating'], deferrable: true },
+    { id: 'joinery', label: 'Sambungan', ask: 'nanti perlu sering dipindah atau dibongkar, atau dipasang permanen', required: false, fields: ['joinery_type'], deferrable: true },
+    { id: 'upholstery', label: 'Jok', ask: 'dudukannya mau empuk pakai jok, atau kayu polos', required: false, fields: ['upholstery'], applies_to: ['CHAIR', 'STOOL', 'BENCH', 'BED_FRAME'], deferrable: true },
   ],
 };

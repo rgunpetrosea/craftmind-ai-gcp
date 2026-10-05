@@ -331,12 +331,17 @@ export function planConversation(spec: Specifications, progress: IntakeProgress 
 /** Topic keys are namespaced by category so switching category re-asks that category's own details. */
 export const topicKey = (spec: Specifications, topic: LooseTopic) => `${spec.category}:${topic.id}`;
 
+const LEAD_INS = ['Boleh tahu kak,', 'Terus,'];
+
+/** One short question bubble per topic ("Boleh tahu kak, biasanya bawa berapa kartu, ...?"). */
+export function questionBubbles(topics: LooseTopic[]): string[] {
+  return topics.map((t, i) => `${LEAD_INS[Math.min(i, LEAD_INS.length - 1)]} ${t.ask}?`);
+}
+
+/** Offline reply: greeting/acknowledgement bubble, then one bubble per question (2-3 bubbles, separated by blank lines). */
 export function templateQuestion(clientName: string, topics: LooseTopic[], isFirstTurn: boolean): string {
-  const bullets = topics.map((t, i) => `${topics.length > 1 ? `${i + 1}. ` : ''}${t.ask}`).join('\n');
-  const opener = isFirstTurn
-    ? `Halo kak ${clientName}! 🙏 Terima kasih sudah menghubungi kami. Supaya desainnya pas, boleh dibantu info:`
-    : `Siap kak ${clientName}, sudah kami catat ya 👍 Selanjutnya, boleh info:`;
-  return `${opener}\n${bullets}`;
+  const opener = isFirstTurn ? `Halo kak ${clientName}, terima kasih sudah menghubungi kami.` : 'Noted kak.';
+  return [opener, ...questionBubbles(topics)].join('\n\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -395,11 +400,17 @@ export function finalizeSpecifications(spec: Specifications, presetDefaults: Par
     a.dimensions_cm = { length: d.length || cd.length, width: d.width || cd.width, height: d.height || cd.height };
   }
 
+  const hadSize = isFieldSet(out, 'dimensions_cm');
   for (const [key, field] of Object.entries(schema.fields)) {
     if (isValueSet(field, a[key])) continue;
     const fromConstruction = field.type === 'dimensions' ? cDefaults[key] : undefined;
     const value = coerceValue(field, presetDefaults[key] ?? fromConstruction);
     if (value !== undefined && isValueSet(field, value)) a[key] = value;
+  }
+  // Size taken from the form factor's standard (client answered in everyday terms or said "terserah"): say so.
+  if (!hadSize && isFieldSet(out, 'dimensions_cm') && out.dimension_mode === 'UNSPECIFIED') {
+    out.dimension_mode = 'REFERENCE_BASED';
+    out.reference_object = `ukuran standar ${construction?.label ?? schema.label}`;
   }
   if (!out.model_name.trim() && construction) out.model_name = construction.label;
   return out;

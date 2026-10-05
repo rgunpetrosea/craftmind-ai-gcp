@@ -16,7 +16,8 @@
       "thread_material": "Waxed linen",
       "embossing_type": "NONE",
       "zipper": "YKK Excella, gold"
-    }
+    },
+    "default_stock_id": "STK-VT-BRN-16"
   },
   {
     "category": "BAG",
@@ -37,7 +38,8 @@
       "stitching_method": "Hand saddle stitch, 3.38mm pitch",
       "thread_color": "Serasi dengan kulit",
       "embossing_type": "NONE"
-    }
+    },
+    "default_stock_id": "STK-VT-BRN-16"
   },
   {
     "category": "FOOTWEAR",
@@ -55,7 +57,8 @@
       "outsole_type": "LEATHER",
       "welt_method": "GOODYEAR",
       "toe_style": "Plain toe"
-    }
+    },
+    "default_stock_id": "STK-CH-COG-18"
   },
   {
     "category": "FURNITURE",
@@ -72,7 +75,8 @@
       "joinery_type": "MORTISE_TENON",
       "assembly": "ASSEMBLED"
     },
-    "site_visit_fee_idr": 150000
+    "site_visit_fee_idr": 150000,
+    "default_stock_id": "STK-WD-JATI-A"
   },
   {
     "category": "CUSTOM_GENERIC",
@@ -85,6 +89,7 @@
     "sourcing_price_idr_per_sqft": 150000,
     "defaults": {
       "quantity": 1
-    }
+    },
+    "default_stock_id": "STK-VT-BRN-16"
   }
 ]

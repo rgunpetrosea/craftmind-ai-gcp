@@ -1,10 +1,11 @@
 import { getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import categoryPresets from '@/lib/data/category-presets.json';
+import crafterProfile from '@/lib/data/crafter-profile.json';
 import inventorySeed from '@/lib/data/inventory.json';
 import { buildDemoSeed } from '@/lib/data/seed';
 import { normalizeOrder } from '@/lib/orders';
-import type { CategoryPreset, ChatMessage, Conversation, CraftCategory, InventoryItem, OrderPayload } from '@/lib/types';
+import type { CategoryPreset, CrafterProfile, ChatMessage, Conversation, CraftCategory, InventoryItem, OrderPayload } from '@/lib/types';
 
 /**
  * Persistence for the WA session buffer, inventory and draft orders.
@@ -19,6 +20,7 @@ import type { CategoryPreset, ChatMessage, Conversation, CraftCategory, Inventor
  *   conversations/{phone_number}       Conversation (phone → active order)
  *   inventory/{stock_id}               InventoryItem
  *   presets/{category}                 CategoryPreset
+ *   crafters/{crafter_id}              CrafterProfile
  */
 export interface DataStore {
   getOrder(orderId: string): Promise<OrderPayload | null>;
@@ -37,9 +39,13 @@ export interface DataStore {
 
   listPresets(): Promise<CategoryPreset[]>;
   savePreset(preset: CategoryPreset): Promise<void>;
+
+  getCrafterProfile(crafterId?: string): Promise<CrafterProfile>;
+  saveCrafterProfile(profile: CrafterProfile): Promise<void>;
 }
 
 const PRESETS = categoryPresets as CategoryPreset[];
+const DEFAULT_PROFILE = crafterProfile as CrafterProfile;
 const INVENTORY = inventorySeed as InventoryItem[];
 
 const byCreatedDesc = (a: OrderPayload, b: OrderPayload) => b.created_at.localeCompare(a.created_at);
@@ -106,6 +112,13 @@ class MemoryStore implements DataStore {
   }
   async savePreset(p: CategoryPreset) {
     this.presets.set(p.category, clone(p));
+  }
+  private profile: CrafterProfile = clone(DEFAULT_PROFILE);
+  async getCrafterProfile() {
+    return clone(this.profile);
+  }
+  async saveCrafterProfile(profile: CrafterProfile) {
+    this.profile = clone(profile);
   }
 }
 
@@ -188,11 +201,18 @@ class FirestoreStore implements DataStore {
   async savePreset(p: CategoryPreset) {
     await this.db.collection('presets').doc(p.category).set(p);
   }
+  async getCrafterProfile(crafterId = DEFAULT_PROFILE.crafter_id) {
+    const snap = await this.db.collection('crafters').doc(crafterId).get();
+    return snap.exists ? { ...DEFAULT_PROFILE, ...(snap.data() as CrafterProfile) } : clone(DEFAULT_PROFILE);
+  }
+  async saveCrafterProfile(profile: CrafterProfile) {
+    await this.db.collection('crafters').doc(profile.crafter_id).set(profile);
+  }
 }
 
 // ---------------------------------------------------------------------------
 
-const globalForStore = globalThis as unknown as { __craftmindStore?: DataStore };
+const globalForStore = globalThis as unknown as { __craftmindStore?: DataStore; __craftmindProfile?: CrafterProfile };
 
 /**
  * Normalizes every order on the way in and out, independent of the raw store's code version. The raw store lives on
@@ -208,6 +228,12 @@ function normalizing(raw: DataStore): DataStore {
     },
     listOrders: async () => (await raw.listOrders()).map(normalizeOrder),
     saveOrder: (order) => raw.saveOrder(normalizeOrder(order)),
+    // profile methods arrived later than some long-lived dev stores: fall back to a process-level profile
+    getCrafterProfile: async (id) => (typeof raw.getCrafterProfile === 'function' ? raw.getCrafterProfile(id) : (globalForStore.__craftmindProfile ??= structuredClone(DEFAULT_PROFILE))),
+    saveCrafterProfile: async (profile) => {
+      if (typeof raw.saveCrafterProfile === 'function') return raw.saveCrafterProfile(profile);
+      globalForStore.__craftmindProfile = structuredClone(profile);
+    },
   };
 }
 
@@ -215,8 +241,12 @@ function bindAll(raw: DataStore): DataStore {
   const methods: Array<keyof DataStore> = [
     'getOrder', 'listOrders', 'saveOrder', 'getConversation', 'saveConversation', 'appendMessage',
     'listMessages', 'updateMessage', 'listInventory', 'saveInventoryItem', 'listPresets', 'savePreset',
+    'getCrafterProfile', 'saveCrafterProfile',
   ];
-  return Object.fromEntries(methods.map((m) => [m, (raw[m] as (...a: unknown[]) => unknown).bind(raw)])) as unknown as DataStore;
+  // A store created by older code (kept alive across dev hot reloads) may lack newer methods: skip those here.
+  return Object.fromEntries(
+    methods.filter((m) => typeof raw[m] === 'function').map((m) => [m, (raw[m] as (...a: unknown[]) => unknown).bind(raw)]),
+  ) as unknown as DataStore;
 }
 
 /** Singleton that survives Next.js dev hot reloads; always accessed through the normalizing wrapper. */

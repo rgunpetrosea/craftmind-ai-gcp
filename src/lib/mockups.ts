@@ -1,8 +1,9 @@
 import { defaultHardware } from '@/lib/agents/pattern-agent';
-import { runVisualAgent, type VisualResult } from '@/lib/agents/visual-agent';
-import { getStore } from '@/lib/gcp/firestore';
+import { mockupSignature, runVisualAgent, type VisualResult } from '@/lib/agents/visual-agent';
+import { getPreset, getStore } from '@/lib/gcp/firestore';
+import { finalizeSpecifications } from '@/lib/spec/catalog';
 import { angleDef, MOCKUP_ANGLES } from '@/lib/spec/angles';
-import type { MockupAngle, MockupRender, OrderPayload } from '@/lib/types';
+import type { MockupAngle, MockupRender, OrderPayload, Specifications } from '@/lib/types';
 import { nowIso } from '@/lib/utils/format';
 
 /**
@@ -30,7 +31,23 @@ export function currentAngles(order: OrderPayload): MockupRender[] {
   ];
 }
 
-const toRender = (r: VisualResult, feedback?: string[]): MockupRender => ({
+/**
+ * This angle's existing render if it still shows `finalSpec` (finalized: workshop defaults filled) and needs no new
+ * generation: same signature, and not an offline concept left behind by a failed image call (that one is retried).
+ */
+export function reusableRender(order: OrderPayload, angle: MockupAngle, finalSpec: Specifications): MockupRender | undefined {
+  const r = currentAngles(order).find((x) => x.angle === angle);
+  if (!r?.signature || (r.engine === 'offline-svg' && r.error)) return undefined;
+  return r.signature === mockupSignature(finalSpec, angle, order.media_assets.angle_prompts?.[angle]) ? r : undefined;
+}
+
+/** The order's spec as it will be locked (signatures are always taken on this). */
+export async function finalSpecOf(order: OrderPayload): Promise<Specifications> {
+  const preset = await getPreset(order.specifications.category);
+  return finalizeSpecifications(order.specifications, preset.defaults);
+}
+
+const toRender = (r: VisualResult, feedback: string[] | undefined, signature: string): MockupRender => ({
   angle: r.angle,
   view: r.view,
   url: r.url,
@@ -39,6 +56,7 @@ const toRender = (r: VisualResult, feedback?: string[]): MockupRender => ({
   ...(r.error && { error: r.error }),
   ...(r.custom_prompt && { custom_prompt: r.custom_prompt }),
   ...(feedback?.length && { feedback }),
+  signature,
 });
 
 export interface RenderOptions {
@@ -64,6 +82,8 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
   }
   const hardware = order.pattern_and_bom.hardware_list.length ? order.pattern_and_bom.hardware_list : defaultHardware(order.specifications);
   const common = { orderId, spec: order.specifications, hardware, sketchUrl: order.media_assets.original_sketch_url, adjustment };
+  const finalSpec = await finalSpecOf(order);
+  const signatureFor = (a: MockupAngle) => mockupSignature(finalSpec, a, prompts[a]);
   const feedbackFor = (a: MockupAngle) => (adjustment ? [...(byAngle.get(a)?.feedback ?? []), adjustment] : byAngle.get(a)?.feedback);
 
   const results: MockupRender[] = [];
@@ -72,7 +92,7 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
 
   if (requested.includes('ANGLE_1')) {
     const r = await runVisualAgent({ ...common, angle: 'ANGLE_1', customPrompt: prompts.ANGLE_1, previousMockupUrl: anchorUrl });
-    results.push(toRender(r, feedbackFor('ANGLE_1')));
+    results.push(toRender(r, feedbackFor('ANGLE_1'), signatureFor('ANGLE_1')));
     anchorUrl = r.url;
     // every image model just failed even after retries: don't spend another round on the other angles
     if (r.engine === 'offline-svg' && r.error) offline = { reason: r.error };
@@ -93,7 +113,7 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
         }),
       ),
   );
-  results.push(...others.map((r) => toRender(r, feedbackFor(r.angle))));
+  results.push(...others.map((r) => toRender(r, feedbackFor(r.angle), signatureFor(r.angle))));
 
   // Merge into the latest order so a takeover, edit or another render that landed meanwhile is kept.
   const latest = (await store.getOrder(orderId))!;
@@ -120,11 +140,20 @@ export function isRenderingAngles(orderId: string): boolean {
   return pendingRenders.has(orderId);
 }
 
-/** Fire-and-forget: render ANGLE_2 and ANGLE_3 after the spec card is sent, so the client reply is not delayed. */
+/**
+ * Fire-and-forget: render ANGLE_2 and ANGLE_3 after the spec card is sent, so the client reply is not delayed. An angle
+ * whose render still shows the current spec (e.g. the open interior already sent with a wallet draft) is skipped.
+ */
 export function renderRemainingAnglesInBackground(orderId: string): void {
   if (pendingRenders.has(orderId)) return;
   pendingRenders.add(orderId);
-  renderMockupAngles(orderId, { angles: ['ANGLE_2', 'ANGLE_3'] })
+  (async () => {
+    const order = await getStore().getOrder(orderId);
+    if (!order) return;
+    const finalSpec = await finalSpecOf(order);
+    const stale = (['ANGLE_2', 'ANGLE_3'] as MockupAngle[]).filter((a) => !reusableRender(order, a, finalSpec));
+    if (stale.length) await renderMockupAngles(orderId, { angles: stale });
+  })()
     .catch((err) => console.error(`[mockups] background angle render for ${orderId} failed:`, err))
     .finally(() => pendingRenders.delete(orderId));
 }

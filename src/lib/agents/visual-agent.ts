@@ -60,6 +60,15 @@ export function visualSpec(spec: Specifications, scope: ViewScope, hardware: str
   };
 }
 
+/**
+ * What one angle's render depends on: the slot's view, the spec fields that view may show (an exterior view ignores
+ * interior changes) and the crafter's custom shot. Equal signatures render the same picture, so it is not paid twice.
+ */
+export function mockupSignature(spec: Specifications, angle: MockupAngle = 'ANGLE_1', customPrompt?: string): string {
+  const view = customPrompt ? customView(spec.category, angle, spec.construction_type) : angleDef(spec.category, angle, spec.construction_type);
+  return JSON.stringify({ c: spec.construction_type, a: angle, view: view.view, v: visualSpec(spec, view.scope), p: customPrompt ?? '' });
+}
+
 export function buildMockupPrompt(spec: Specifications, hardware: string[], view: AngleView, customShot?: string): string {
   const schema = schemaOf(spec.category);
   const label = constructionDef(spec.construction_type)?.label ?? schema.noun;

@@ -8,6 +8,7 @@ import {
   Images,
   Loader2,
   MessagesSquare,
+  NotebookPen,
   PackageCheck,
   PackageSearch,
   PauseCircle,
@@ -30,7 +31,7 @@ import { postJson, usePoll } from '@/lib/hooks/use-poll';
 import { schemaOf } from '@/lib/spec/catalog';
 import { primaryMaterial } from '@/lib/spec/describe';
 import { angleDef, MOCKUP_ANGLES } from '@/lib/spec/angles';
-import type { AutomationMode, ChatMessage, InventoryItem, MockupAngle, OrderPayload, Specifications } from '@/lib/types';
+import type { AutomationMode, ChatMessage, ClientBrief, InventoryItem, MockupAngle, OrderPayload, Specifications } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/format';
 import { BomTable } from './bom-table';
@@ -43,7 +44,18 @@ interface DetailResponse {
   breakdown: QuotationBreakdown | null;
   allocated_stock: InventoryItem | null;
   rendering_angles: boolean;
+  budget: { turns_used: number; turn_cap: number; renders_used: number; render_cap: number };
 }
+
+const BRIEF_LABELS: Array<[keyof ClientBrief, string]> = [
+  ['product_type', 'Product'],
+  ['usage_context', 'Usage'],
+  ['fitment_size', 'Fitment / size'],
+  ['style_preference', 'Style'],
+  ['hardware_requirement', 'Hardware'],
+  ['target_deadline', 'Deadline'],
+  ['budget', 'Budget'],
+];
 
 const ENGINE_LABEL = { 'gemini-image': 'Gemini image model', imagen: 'Imagen', 'offline-svg': 'Offline concept (no AI image)' } as const;
 
@@ -139,6 +151,14 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
             <div className="mt-2 flex flex-wrap gap-1.5">
               <SessionStateBadge state={order.session_state} />
               <AutomationBadge order={order} />
+              {data.budget && (
+                <Badge
+                  tone={data.budget.turns_used >= data.budget.turn_cap - 2 || data.budget.renders_used >= data.budget.render_cap ? 'amber' : 'neutral'}
+                  title="Per-session cost guardrails: AI replies before automatic handover, AI mockup render rounds"
+                >
+                  AI turns {data.budget.turns_used}/{data.budget.turn_cap} · AI renders {data.budget.renders_used}/{data.budget.render_cap}
+                </Badge>
+              )}
               {order.escalation_reason && <Badge tone="neutral">{ESCALATION_LABEL[order.escalation_reason]}</Badge>}
             </div>
             {order.escalation_note && order.automation_mode !== 'AI_COPILOT' && (
@@ -321,6 +341,29 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
           </div>
         </div>
       </Card>
+
+      {/* Background brief: what the silent parser has learned, in the client's own terms */}
+      {order.client_brief && Object.values(order.client_brief).some((v) => v.trim()) && (
+        <Card>
+          <CardHeader
+            title="Client brief"
+            icon={<NotebookPen className="h-4 w-4 text-leather-500" />}
+            action={
+              <span className="text-[11px] text-stone-500">
+                {order.automation_mode === 'AI_COPILOT' ? 'Auto-extracted from the chat' : 'Still updating silently during the takeover'}
+              </span>
+            }
+          />
+          <dl className="grid gap-x-4 gap-y-2 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            {BRIEF_LABELS.filter(([k]) => order.client_brief![k].trim()).map(([k, label]) => (
+              <div key={k}>
+                <dt className="text-[11px] uppercase tracking-wide text-stone-500">{label}</dt>
+                <dd className="text-stone-800">{order.client_brief![k]}</dd>
+              </div>
+            ))}
+          </dl>
+        </Card>
+      )}
 
       <SpecEditor key={order.order_id} order={order} busy={busy === 'recalc'} onRecalculate={recalculate} />
 

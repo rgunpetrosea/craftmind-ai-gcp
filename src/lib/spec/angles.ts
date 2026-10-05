@@ -91,3 +91,47 @@ export function customView(category: CraftCategory, angle: MockupAngle, construc
 
 /** Legacy angle ids (before category views) → slots. */
 export const LEGACY_ANGLE: Record<string, MockupAngle> = { EXTERIOR_CLOSED: 'ANGLE_1', INTERIOR_OPEN: 'ANGLE_2', DETAIL_MACRO: 'ANGLE_3' };
+
+/** First slot of this category that shows the given scope (e.g. the open interior), if any. */
+export function angleForScope(category: CraftCategory, scope: ViewScope, construction?: ConstructionType): MockupAngle | undefined {
+  return MOCKUP_ANGLES.find((a) => angleDef(category, a, construction).scope === scope);
+}
+
+/** `angle_id` 1..3 from the mockup tool → slot. */
+export function angleFromId(id: unknown): MockupAngle | undefined {
+  const n = Math.round(Number(id));
+  return n >= 1 && n <= MOCKUP_ANGLES.length ? MOCKUP_ANGLES[n - 1] : undefined;
+}
+
+const INTERIOR_REQUEST =
+  /\b(posisi terbuka|terbuka(nya)?|dibuka|kebuka|bukaan|bagian dalam(nya)?|dalamnya|sisi dalam|interior|inside|open ?view|opened|slot ?kartu(nya)?|card ?slots?|isinya|furing(nya)?|lining)\b/i;
+const DETAIL_REQUEST = /\b(detail jahitan|jahitan(nya)?|stitch\w*|pinggiran(nya)?|edge|close ?-?up|macro|makro|dari dekat)\b/i;
+const EXTERIOR_REQUEST = /\b(tampak luar|luarnya|posisi tertutup|tertutup|ditutup|closed|exterior|tampak depan)\b/i;
+
+/**
+ * The view the client explicitly asked to see ("posisi terbuka", "slot kartunya", "detail jahitan", "tampak luar"),
+ * mapped to this category's slot. Undefined when no specific view was asked for.
+ */
+export function angleForRequest(text: string, category: CraftCategory, construction?: ConstructionType): MockupAngle | undefined {
+  if (INTERIOR_REQUEST.test(text)) return angleForScope(category, 'INTERIOR', construction);
+  if (DETAIL_REQUEST.test(text)) return angleForScope(category, 'DETAIL', construction);
+  if (EXTERIOR_REQUEST.test(text)) return 'ANGLE_1';
+  return undefined;
+}
+
+/**
+ * Angles a mockup round shows by default. Wallets / card holders always include the open interior (ANGLE_2): the card
+ * slots are what the client needs to check. Other categories start with the hero view.
+ */
+export function defaultMockupAngles(category: CraftCategory, construction?: ConstructionType): MockupAngle[] {
+  const interior = category === 'SMALL_GOODS' ? angleForScope(category, 'INTERIOR', construction) : undefined;
+  return interior ? ['ANGLE_1', interior] : ['ANGLE_1'];
+}
+
+/** Human list of the slots for the tool description: "1 = Closed exterior, 2 = Open interior, 3 = ...". */
+export function angleChoices(category: CraftCategory, construction?: ConstructionType): string {
+  return MOCKUP_ANGLES.map((a, i) => {
+    const d = angleDef(category, a, construction);
+    return `${i + 1} = ${d.label} (${d.scope.toLowerCase()})`;
+  }).join(', ');
+}

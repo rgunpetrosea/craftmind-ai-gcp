@@ -3,6 +3,7 @@ import { matchInventory } from '@/lib/agents/inventory-agent';
 import { computeQuotation } from '@/lib/agents/pricing';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
 import { isRenderingAngles } from '@/lib/mockups';
+import { MAX_AI_MOCKUP_RENDERS, SESSION_TURN_CAP } from '@/lib/spec/guardrails';
 import { primaryMaterial } from '@/lib/spec/describe';
 import { expirePartialPause } from '@/lib/utils/takeover';
 
@@ -26,5 +27,11 @@ export async function GET(_request: NextRequest, ctx: RouteContext<'/api/orders/
     : null;
   const allocated = inventory.find((i) => i.stock_id === order.material_sourcing.allocated_stock_id) ?? null;
 
-  return Response.json({ order, messages, breakdown, allocated_stock: allocated, rendering_angles: isRenderingAngles(id) });
+  const budget = {
+    turns_used: order.intake?.session_turn_count ?? 0,
+    turn_cap: SESSION_TURN_CAP,
+    renders_used: order.intake?.mockup_render_count ?? 0,
+    render_cap: MAX_AI_MOCKUP_RENDERS,
+  };
+  return Response.json({ order, messages, breakdown, allocated_stock: allocated, rendering_angles: isRenderingAngles(id), budget });
 }

@@ -70,6 +70,7 @@ GEMINI_API_KEY=your_key_from_ai_studio
 | `PARTIAL_PAUSE_MINUTES` | `30` | How long the AI stays silent after the crafter replies manually. |
 | `CONFUSION_STRIKE_LIMIT` | `3` | Turns without progress before the AI hands over to the crafter. |
 | `DEBOUNCE_BASE_MS` / `DEBOUNCE_MAX_WAIT_MS` | `4000` / `15000` | How long the AI waits for the client to finish typing a burst. Use `800` for testing. |
+| `DEBOUNCE_MIN_MS` | `2000` | Buffer window: the AI never answers sooner than this after the client's last message, so back-to-back messages get ONE combined reply (also the delay for "?" / price / mockup flush triggers). |
 | `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID` | — | Optional: also deliver replies through the real WhatsApp Cloud API. |
 
 Never commit `.env.local`; it is git-ignored. Only `.env.example` is tracked.
@@ -222,7 +223,7 @@ For each scenario the runner prints the conversation (the CSV message is marked 
 | `EADDRINUSE :3000` | `fuser -k 3000/tcp` (Linux/WSL), or `npm run dev -- -p 3001`. |
 | Orders disappeared | The in-memory store resets on restart. Use `USE_FIRESTORE=true` to keep data. |
 | AI never replies; simulator shows "mengetik…" forever | Check the terminal for errors. Confirm the order isn't in takeover (red/amber strip): press the toggle or **Resume AI**. |
-| AI replies after a long delay | The debounce waits for the client to stop typing. Use `DEBOUNCE_BASE_MS=800` for tests; end a burst with "?" or "itu saja kak" to reply immediately. |
+| AI replies after a long delay | The debounce waits for the client to stop typing. Use `DEBOUNCE_BASE_MS=800` for tests; end a burst with "?" or "itu saja kak" to reply after the 2 s buffer window (`DEBOUNCE_MIN_MS`). |
 | **Recalculate** button greyed out | A required field is empty (the amber warning lists it), or the order is already approved. |
 | Scenario runner shows `(no reply)` / timeout | The server isn't running at `--base`, or Gemini is slow: add `--timeout 120`. |
 | Scenario fails only online | Gemini phrased or parsed differently. Read the transcript printed above the ✘; fix the prompt in `src/lib/agents/intake-agent.ts` or adjust the scenario's follow-ups. |

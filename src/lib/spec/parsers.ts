@@ -195,5 +195,29 @@ export function bagDimensionsForLaptop(inch: number): Dimensions {
   return { length: Math.round(0.915 * diag + 4), width: 10, height: Math.round(0.63 * diag + 4) };
 }
 
+/**
+ * Clients answer lifestyle questions in everyday terms; map the answer to a concrete leather (the crafter reviews it).
+ * "yang makin lama makin cantik, coklat" → "Veg-Tan Brown"; "tahan gores, hitam" → "Epsom Black".
+ */
+export function parseLeatherPreference(text: string): string | undefined {
+  const type = [
+    [/vintage|patina|makin (lama|cantik)|berubah warna|klasik/i, 'Veg-Tan'],
+    [/tahan gores|rapi|kaku|formal|bentuk\w* tetap|nggak gampang lecet|ga gampang lecet/i, 'Epsom'],
+    [/rugged|kasar|tough|gagah|lasak|petualang/i, 'Pull-Up'],
+    [/lembut|lemas|halus|soft|empuk/i, 'Nappa'],
+  ].find(([re]) => (re as RegExp).test(text))?.[1] as string | undefined;
+  const color = parseColor(text);
+  if (!type && !color) return undefined;
+  return type ? [type, color].filter(Boolean).join(' ') : `${color} leather`;
+}
+
+/** "kayu yang hangat klasik" → teak; "terang modern" → oak; "kayu dan besi" → teak (+ iron frame noted by the crafter). */
+export function parseWoodPreference(text: string): string | undefined {
+  if (/besi|industrial|metal/i.test(text)) return 'Jati (teak) + rangka besi';
+  if (/hangat|klasik|gelap|coklat tua|tradisional/i.test(text)) return 'Jati (teak)';
+  if (/terang|modern|skandinavia|scandi|putih|natural muda/i.test(text)) return 'Oak (kayu terang)';
+  return undefined;
+}
+
 export const DECLINE = /^\s*(ga|gak|nggak|enggak|tidak|no|skip|nope)\b|terserah|bebas|ikut (aja|standar|workshop|mas|kakak)|standar( aja)?\b|apa aja|seadanya|default/i;
 export const FINISHED = /itu (saja|aja)|udah (segitu|cukup)|sudah (segitu|cukup)|cukup (segitu|itu)/i;

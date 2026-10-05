@@ -75,7 +75,7 @@ function evaluate(sc, order, ctx) {
   }
   if (e.automation_mode) check('automation', order.automation_mode === e.automation_mode, `automation_mode = ${order.automation_mode} (want ${e.automation_mode})`);
   check('escalation', (order.escalation_reason ?? null) === e.escalation_reason, `escalation_reason = ${order.escalation_reason ?? 'none'} (want ${e.escalation_reason ?? 'none'})`);
-  if (e.debounce_bypass) check('debounce bypass', ctx.scenarioDebounceMs !== undefined && ctx.scenarioDebounceMs <= 1000, `scenario message debounce = ${ctx.scenarioDebounceMs} ms (want immediate, ≤ 1000 ms)`);
+  if (e.debounce_bypass) check('debounce bypass', ctx.scenarioDebounceMs !== undefined && ctx.scenarioDebounceMs <= 2000, `scenario message debounce = ${ctx.scenarioDebounceMs} ms (want the minimum buffer window, ≤ 2000 ms)`);
   if (e.dimension_mode === 'PENDING_SITE_VISIT' && isQuoted(order)) {
     const fee = ctx.breakdown?.site_visit_idr ?? 0;
     check('site visit fee', fee > 0, `site-visit fee in quote = Rp ${fee.toLocaleString('id-ID')}`);
@@ -84,6 +84,13 @@ function evaluate(sc, order, ctx) {
   if (ctx.timedOut) check('no timeout', false, `no reply within ${TIMEOUT_MS / 1000}s`);
   return out;
 }
+
+// The QA matrix covers every craft category (e.g. SCN-05 is furniture). Run it under a profile that allows everything,
+// then restore the crafter's own profile, so domain-boundary refusals don't mask the behaviour under test.
+const ALL_OFFERINGS = ['wallets', 'card_holders', 'bags', 'belts', 'watch_straps', 'shoes', 'furniture', 'apparel', 'jewelry', 'home_decor', 'sports_gear'];
+const originalProfile = (await api('/api/crafter-profile')).profile;
+const putProfile = (profile) => api('/api/crafter-profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) });
+if (originalProfile) await putProfile({ ...originalProfile, allowed_categories: ALL_OFFERINGS });
 
 let failures = 0;
 console.log(`Running ${scenarios.length} scenario(s) against ${BASE} (timeout ${TIMEOUT_MS / 1000}s per turn)\n`);
@@ -116,5 +123,6 @@ for (const sc of scenarios) {
   console.log(`   ${ok ? 'PASS' : 'FAIL'}  ${sc.id}  quote=${order.pattern_and_bom.suggested_quotation_idr || '-'}  sqft=${order.pattern_and_bom.estimated_material_sqft || '-'}  order=${order.order_id}\n`);
 }
 
+if (originalProfile) await putProfile(originalProfile);
 console.log(failures ? `${failures} scenario(s) failed` : 'All scenarios passed');
 process.exit(failures ? 1 : 0);

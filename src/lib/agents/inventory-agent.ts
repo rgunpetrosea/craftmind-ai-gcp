@@ -62,6 +62,48 @@ function thicknessOf(text: string): number | undefined {
   return m ? Number(m[1].replace(',', '.')) : undefined;
 }
 
+const LEATHER_TYPES = new Set(['veg-tan', 'chrome-tan', 'epsom', 'pull-up', 'crazy horse', 'nappa', 'saffiano']);
+const WOOD_METAL_TYPES = new Set(['teak', 'mahogany', 'walnut', 'suar', 'iron']);
+
+/** True when the material text names no specific type we stock ("Kulit", "Cokelat tua", "Dark Brown leather", "kayu"). */
+export function isGenericMaterial(material: string): boolean {
+  return material.trim() !== '' && !firstMatch(TYPE_SYNONYMS, material) && !/croc|buaya|python|ostrich|lizard|stingray|sintetis|synthetic|suede|novonappa/i.test(material);
+}
+
+/**
+ * Map a generic material to the closest stocked item so pattern, BOM and price can be computed straight away:
+ * same material family as the category (leather vs wood/metal), colour match first (also from the separate colour
+ * field), then the category's house default (`preset.default_stock_id`), then the best-stocked item. The crafter can
+ * still change it on the dashboard.
+ */
+export function resolveGenericMaterial(
+  material: string,
+  colorHint: string,
+  inventory: InventoryItem[],
+  preset: CategoryPreset,
+  kind: 'leather' | 'wood_metal',
+): InventoryItem | undefined {
+  const family = kind === 'leather' ? LEATHER_TYPES : WOOD_METAL_TYPES;
+  const items = inventory.filter((i) => family.has(i.material_type));
+  const wantedColor = firstMatch(COLOR_SYNONYMS, `${material} ${colorHint}`);
+  const wantedThickness = thicknessOf(material);
+  const best = (list: InventoryItem[]) =>
+    [...list].sort(
+      (a, b) =>
+        Number(b.available_sqft > 0) - Number(a.available_sqft > 0) ||
+        (wantedThickness !== undefined ? Math.abs(a.thickness_mm - wantedThickness) - Math.abs(b.thickness_mm - wantedThickness) : 0) ||
+        b.available_sqft - a.available_sqft,
+    )[0];
+
+  if (wantedColor) {
+    // a colour the client asked for is never swapped: no item in that colour → leave it generic (special sourcing)
+    const sameColor = items.filter((i) => i.color === wantedColor);
+    return sameColor.length ? best(sameColor) : undefined;
+  }
+  const houseDefault = items.find((i) => i.stock_id === preset.default_stock_id && i.available_sqft > 0);
+  return houseDefault ?? best(items.filter((i) => i.available_sqft > 0));
+}
+
 export function matchInventory(
   material: string,
   requiredSqft: number,

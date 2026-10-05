@@ -22,6 +22,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
   if (!order) return Response.json({ error: 'Order not found' }, { status: 404 });
 
   setAutomationMode(order, mode, mode === 'AI_COPILOT' ? undefined : 'CRAFTER_OVERRIDE', pause_minutes);
+  // handing back to the AI is a deliberate crafter decision: it gets a fresh turn budget for this session
+  if (mode === 'AI_COPILOT' && order.intake) order.intake = { ...order.intake, session_turn_count: 0 };
   await store.saveOrder(order);
 
   const messages = await store.listMessages(id);

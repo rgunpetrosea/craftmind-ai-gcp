@@ -9,6 +9,12 @@ import type { MessageMediaType } from '@/lib/types';
  * a closing phrase or question flushes early (hybrid trigger), and a hard cap
  * guarantees a reply even if the client never stops typing.
  *
+ * Every burst waits at least `minMs` (2 s) after the LAST message, even on a
+ * flush trigger: "Halo, selamat sore!" + "Di sini terima bespoke order ya?"
+ * sent back to back are answered once, as one combined input. A message that
+ * lands while the AI is still working on the previous flush is handled by the
+ * orchestrator (the stale reply is dropped and the burst answered together).
+ *
  * Timers live in-process: fine for `next dev` and a single Cloud Run instance
  * with CPU always allocated. For multi-instance production, replace `schedule`
  * with a Cloud Tasks task named `<session>-<window>` and `scheduleTime = flushAt`.
@@ -16,6 +22,7 @@ import type { MessageMediaType } from '@/lib/types';
 
 export interface DebounceConfig {
   baseMs: number;
+  /** Buffer window: the quiet time after the last message before the AI runs. */
   minMs: number;
   /** Absolute cap measured from the first message in the burst. */
   maxWaitMs: number;
@@ -23,7 +30,7 @@ export interface DebounceConfig {
 
 export const DEFAULT_DEBOUNCE: DebounceConfig = {
   baseMs: Number(process.env.DEBOUNCE_BASE_MS ?? 4000),
-  minMs: 600,
+  minMs: Number(process.env.DEBOUNCE_MIN_MS ?? 2000),
   maxWaitMs: Number(process.env.DEBOUNCE_MAX_WAIT_MS ?? 15000),
 };
 
