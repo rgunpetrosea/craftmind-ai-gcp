@@ -187,6 +187,28 @@
     "origin": "LOCAL"
   },
   {
+    "stock_id": "STK-BD-PLY-18",
+    "name": "Plywood (multipleks) 18mm",
+    "material_type": "plywood",
+    "color": "natural",
+    "thickness_mm": 18,
+    "available_sqft": 640,
+    "price_idr_per_sqft": 18000,
+    "supplier": "PT Kayu Lapis Surabaya",
+    "origin": "LOCAL"
+  },
+  {
+    "stock_id": "STK-BD-BLK-18",
+    "name": "Blockboard 18mm",
+    "material_type": "blockboard",
+    "color": "natural",
+    "thickness_mm": 18,
+    "available_sqft": 320,
+    "price_idr_per_sqft": 12000,
+    "supplier": "PT Kayu Lapis Surabaya",
+    "origin": "LOCAL"
+  },
+  {
     "stock_id": "STK-MT-IRON-4",
     "name": "Besi hollow 4x4 black",
     "material_type": "iron",

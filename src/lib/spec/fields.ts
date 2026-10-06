@@ -113,6 +113,8 @@ export interface TopicDef<C extends CraftCategory> {
   fields: Array<keyof AttributesByCategory[C] & string>;
   /** Restrict to these form factors (e.g. card layout only for wallets). */
   applies_to?: Array<ConstructionByCategory[C]>;
+  /** Never for these form factors (e.g. "permanen vs bongkar pasang" for built-in cabinetry). */
+  excludes?: Array<ConstructionByCategory[C]>;
   /** Custom completeness test; default = any of `fields` is set. */
   is_filled?: (spec: Extract<Specifications, { category: C }>) => boolean;
   /** Whether "terserah" may close the topic with workshop defaults (size and material never can). */

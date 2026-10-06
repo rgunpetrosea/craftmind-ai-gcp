@@ -196,7 +196,7 @@ export async function generateTextWithTools(opts: {
       config: {
         systemInstruction: opts.systemInstruction,
         temperature: opts.temperature ?? 0.7,
-        tools: [{ functionDeclarations: opts.tools }],
+        ...(opts.tools.length && { tools: [{ functionDeclarations: opts.tools }] }),
       },
     });
     const calls = (response.functionCalls ?? []).map((c) => ({ name: c.name ?? '', args: (c.args ?? {}) as Record<string, unknown> }));
@@ -219,7 +219,7 @@ export interface GeneratedImage {
  * render). Tries every model in MODEL_CHAINS.image with the usual retry/fallback before giving up.
  */
 /** Output frame of a render. Gemini image models take all of these; Imagen gets the nearest one it supports. */
-export type ImageAspectRatio = '1:1' | '2:3' | '3:4';
+export type ImageAspectRatio = '1:1' | '2:3' | '3:4' | '3:2';
 
 export async function generateImageWithGemini(prompt: string, references: Part[] = [], aspectRatio: ImageAspectRatio = '1:1'): Promise<GeneratedImage> {
   const parts: Part[] = [...references, { text: prompt }];
@@ -267,8 +267,8 @@ export async function generateImageWithImagen(prompt: string, aspectRatio: Image
   const response = await getGenAI().models.generateImages({
     model: MODELS.imagen,
     prompt,
-    // Imagen supports 1:1, 3:4, 4:3, 9:16, 16:9: a 2:3 portrait frame becomes 3:4
-    config: { numberOfImages: 1, aspectRatio: aspectRatio === '2:3' ? '3:4' : aspectRatio },
+    // Imagen supports 1:1, 3:4, 4:3, 9:16, 16:9: a 2:3 portrait frame becomes 3:4, a 3:2 landscape one 4:3
+    config: { numberOfImages: 1, aspectRatio: aspectRatio === '2:3' ? '3:4' : aspectRatio === '3:2' ? '4:3' : aspectRatio },
   });
   const image = response.generatedImages?.[0]?.image;
   if (!image?.imageBytes) throw new Error(`${MODELS.imagen} returned no image`);

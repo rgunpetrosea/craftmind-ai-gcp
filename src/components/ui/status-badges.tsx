@@ -14,6 +14,8 @@ export const ESCALATION_LABEL: Record<EscalationReason, string> = {
   CLIENT_REQUEST: 'Client asked for a human',
   CONFUSION_RULE: 'Loop / unproductive chat',
   CRAFTER_OVERRIDE: 'Crafter override',
+  NON_STANDARD: 'Out-of-scope request',
+  PRICE_NEGOTIATION: 'Discount below floor price',
 };
 
 export function SessionStateBadge({ state }: { state: SessionState }) {

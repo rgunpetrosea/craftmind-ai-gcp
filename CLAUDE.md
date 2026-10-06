@@ -152,7 +152,8 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   * SMALL_GOODS: card slots (front/back/central), cash compartments, ID window, coin zip, zipper (zip only), lining, edge, stitching, embossing.
   * BAG: dimensions, gusset depth, laptop size, capacity, structure, main closure, strap type, hardware, pockets, lining, padding, edge, embossing.
   * FOOTWEAR: EU size, width fit, last shape, upper material, toe style, lining, outsole, welt method, heel height.
-  * FURNITURE: L x W x H, wood/metal, secondary material, finish/coating, color/stain, joinery, upholstery, seats, assembly.
+  * FURNITURE: L x W x H, wood/metal, secondary material, finish/coating, color/stain, joinery, upholstery, seats, assembly;
+    built-ins (KITCHEN_SET, WARDROBE, TV_CONSOLE) add hinges & rails, countertop, floor-to-ceiling, appliances (see v15).
   * CUSTOM_GENERIC: dimensions, material, color, intended use, quantity + free `custom_fields`.
 - Single source of truth: `src/lib/spec/categories/*.ts`, typed `FieldMap<Attributes>` (compile error if a field is missing or
   mistyped). From it are generated: the dashboard form (`spec-editor.tsx`), Gemini schemas (`spec/gemini-schema.ts`), offline
@@ -167,8 +168,10 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 ## Flexible Dimension Rules (v4)
 - Clients rarely know centimetres. `dimension_mode` records how the size was established, `reference_object` what it came from.
 - Precedence (`resolveDimensionSource()` in `src/lib/spec/dimensions.ts`, runs after every intake turn, Gemini or offline):
+  a site visit already selected stays `PENDING_SITE_VISIT` and keeps the client's numbers as the provisional size;
   explicit cm from the client → `EXACT_CM`; furniture that must fit a room with no measurements → `PENDING_SITE_VISIT`
-  (dimensions cleared, provisional size at lock, `site_visit_fee_idr` from the preset added to the quote); a reference in
+  (provisional size at lock, `site_visit_fee_idr` from the preset added to the quote); built-ins then get their wall runs
+  from the text in every mode (`applyWallRuns`); a reference in
   `src/lib/spec/references.ts` (Birkin/Kelly/Speedy, iPad/laptop/A4/passport) → `REFERENCE_BASED` with the table's size
   (MODEL = the model's own size, CONTENT = object + room, deeper with accessories); otherwise Gemini's own inferred reference.
 - The reference table is also injected into the Gemini extraction prompt as calibration; add new references there, not in prompts.
@@ -181,7 +184,7 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   turn (a locked card stays locked). PRICE_TIMELINE questions never block the card. A term inside "X itu kayak gimana?" is
   not a choice; "bisa bikin X?" is a request, not a question. Q&A turns are not confusion strikes.
 - Requests outside the crafting scope (electronics, safety certifications, protected materials, mechanisms; Gemini
-  `non_standard_request` or `NON_STANDARD` regex) → `FULL_MANUAL` + `CLIENT_REQUEST`, `escalation_note` with the reason,
+  `non_standard_request` or `NON_STANDARD` regex) → `FULL_MANUAL` + `NON_STANDARD` ("Out-of-scope request"), `escalation_note` with the reason,
   handoff message to the client, `notifyCrafter()` (dashboard + optional WhatsApp to `CRAFTER_WA_NUMBER`).
 - Mockups try every model in `MODEL_CHAINS.image`; only when all fail is the offline SVG used, and
   `media_assets.mockup_error` tells the crafter why (free-tier keys have image quota 0 → billing required).
@@ -312,6 +315,10 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   badge) goes up by ONE per tool call, and only when a real image (not offline-svg) was generated for a requested angle.
   Over the cap, reusable angles are still sent, nothing is generated, and `mockupCapMessage` follows.
 - Background angle renders skip angles whose render is still current.
+- REQUIRED SPEC GATE: no mockup while `missingRequired()` is non-empty, for every trigger (picture request, model tool
+  call, first draft, revision); checked in the orchestrator (`mockupGateOpen`) and again inside `executeGenerateMockupTool`
+  (NOT_READY). While closed the model is not offered the tool and only asks; an early picture request gets "Gambarnya
+  langsung aku kirim begitu beberapa detail ini lengkap ya kak." Slots are parsed from the latest message before the gate.
 - Spec confirmation (lock) renders `confirmationMockupAngles()` in ONE batched call
   (`generate_mockup_tool({ angles: [1, 2, 3] })`, one render round): wallets closed + open interior + stitch & edge macro,
   bags their pair, footwear / furniture / custom hero + macro. The model passes `angles` (array) too and must never call
@@ -335,6 +342,64 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 - Images are sent as each angle finishes (`renderMockupAngles({ onRender })`), in slot order; a render error sends a short
   apology and notifies the crafter instead of leaving the chat on the acknowledgment. The cap message is sent once.
   The simulator groups consecutive AI images into one album bubble.
+
+## Built-in Interior Cabinetry (v15)
+- `BUILT_IN_FURNITURE` / `isBuiltInFurniture()` (`categories/furniture.ts`): KITCHEN_SET, WARDROBE, TV_CONSOLE, detected
+  before CABINET / SHELF ("lemari pakaian", "rak tv"). Topics may now `excludes` form factors as well as `applies_to` them.
+- Built-in questions only, ALL REQUIRED (mandatory slots): size (wall width, up to the ceiling or not, else site visit),
+  board core (`material`: plywood / multipleks vs blockboard, mapped by `parseBoardPreference`), finishing `board_finish`
+  (HPL / duco / melamic), hinges & rails `hardware` (standard / soft-close / Blum-Hafele; "slow-motion", "peredam" →
+  soft-close), `countertop` (kitchen only; free text "Material (stone / colour)" via `parseCountertop`: "granit hitam Nero
+  Marquina" → "Granite (Nero Marquina)"). "Terserah" still defers them to the form factor's defaults.
+  Joinery ("permanen vs bongkar pasang"), knock-down assembly, seats and upholstery are excluded / hidden for built-ins.
+- Inventory has board stock (`STK-BD-PLY-18` plywood 18mm, `STK-BD-BLK-18` blockboard 18mm); a generic "kayu" on a built-in
+  resolves to plywood. Pattern: module-based cut lists (`builtInCabinetry`), hinges / rails / handles counted per door and
+  drawer, countertop and HPL sheets on the hardware list; duco x1.25 labor, HPL / melamic x1.1.
+- Kitchen layout fields: `layout_shape` (STRAIGHT / L_SHAPE / U_SHAPE / GALLEY), `second_wall_cm` (L2; `dimensions_cm.length`
+  is L1, width the 60 cm depth), `layout_notes` (window / fridge / hob positions). `parseWallRuns` reads "L1: 300, L2: 200,
+  H: 240", "dinding 1/2", "bentuk L 3m x 2m tinggi 2,4m" (metres converted); `applyWallRuns` fills and repairs misreads.
+- Cut list (`builtInLayout` / `builtInCabinetry`): `kitchenRun()` aggregates walls (L: L1 + L2 - depth, e.g. 300 + 200 - 60 =
+  440; U: L1 + 2 x L2 - 2 x depth; galley: L1 + L2); countertop, backsplash and cabinet runs use it (minus a 100 cm fridge
+  bay). Wall cabinets are 80 cm, or full height (H - 85 base - 60 splash) when `floor_to_ceiling` or H >= 240. A fridge
+  adds 2 tall enclosure panels (H x depth, e.g. 240 x 60) + top bridging panels and a bridge door; L / U add corner panels.
+- Full height is ONE rule, `isFullHeightBuiltIn()` (`floor_to_ceiling`, ceiling words anywhere in the spec, or H >= 240), used
+  by the cut list, MASTER LAYOUT, HARD CONSTRAINTS and the offline SVG; "sampai plafon" in the chat always sets
+  `floor_to_ceiling` (`applyWallRuns`) and an unknown height becomes the 240 cm standard ceiling (`ceilingHeightCm`).
+- HARD CONSTRAINTS (`builtInHardConstraints()`), re-read from the stored spec every time the tool runs: "wall cabinets
+  extending fully to the ceiling line (2.4m height), zero gap above cabinets, flush to ceiling", the fridge enclosure and
+  other appliances, the L / U / galley runs. They head the prompt, override any default template and any reference image
+  (sketch, previous render, master shot), are re-checked in a final "CHECK BEFORE FINISHING" line, and are part of the
+  render signature together with `BUILT_IN_PROMPT_VERSION` (bump it when the built-in prompt changes).
+- Mockups, geometry lock: ANGLE_1 is the Perspective Master Shot; every angle's prompt carries the same `MASTER LAYOUT`
+  (`builtInLayoutPlan()`: shape, runs, window near the left corner, tall fridge unit at the right end, sink, hob,
+  ceiling; client `layout_notes` win), derived angles get the master image plus a GEOMETRY LOCK instruction. ANGLE_2 =
+  "same exact kitchen as Angle 1, doors open 90 degrees" + NEGATIVE "no layout changes, no moving windows, no new wall
+  structures...". Confirmation sends one `generate_mockup_tool({ batch_job: [{angle:1},{angle:2,derived_from:1},
+  {angle:3,derived_from:1}] })`; a stale master is re-rendered first in the same call and its derived angles follow it.
+- Mockups (`visual-agent.ts`): subject "built-in ... installed in a <room>", `BUILT_IN_SCENE` (realistic architectural
+  interior photo, eye-level, window daylight + downlights, no isometric / cutaway), eye-level views per room in
+  `angles.ts` (installed · doors & drawers open · finish & hardware macro), frame 3:2 (kitchen, TV wall) / 3:4 (wardrobe).
+  `interiorSpatialRules()` adds a `SPATIAL RULES:` line: "sampai plafon" / `floor_to_ceiling` → "floor-to-ceiling built-in
+  cabinetry, no top gap, wall-mounted upper cabinets flush with ceiling"; "kulkas 2 pintu" / refrigerator → "includes a
+  modern stainless steel side-by-side double door refrigerator fitted inside the tall cabinet enclosure" (1 pintu → single
+  door); hob + hood, oven, microwave, sink, TV; kitchen proportions; eye-level indoor perspective.
+
+## Furniture Add-ons & Discount Negotiation (v16)
+- Add-on catalog `src/lib/spec/addons.ts` (FURNITURE): recessed LED strip / under-cabinet lighting (per metre of cabinet
+  run), touch / motion sensor switch, pop-up power socket, magic corner, carousel, pull-out rack. `applyAddOns()` runs after
+  every intake turn and records each as a custom field (kind ADD_ON, surcharge = price x qty; preset `addon_prices_idr`
+  overrides), so the BOM / quote recalculates; the hardware list shows them as "(add-on)" (not priced twice).
+- They are never out of scope: add-on phrases are removed before the NON_STANDARD check, a Gemini non-standard flag about
+  them is dropped, and "stop kontak dengan ..." no longer matches the talk-to-a-human pattern. Real out-of-scope requests
+  escalate with reason NON_STANDARD; only explicit requests for a person use CLIENT_REQUEST.
+- Discounts (`agents/negotiation.ts`, orchestrator branch before Q&A, only when the required spec gate is open):
+  floor = cost x (1 + `floor_margin_pct`, 0.15); AI cap = min(quote - floor, quote x `max_auto_discount_pct`, 0.05).
+  Requested price (`requestedPrice`: "diskon 10%", "jadi 30 juta", "potong 2 jt") > 20% below the floor with NO new
+  add-ons → FULL_MANUAL + PRICE_NEGOTIATION + crafter notified. Below the floor otherwise → polite hold (at most the cap).
+  New add-ons whose cheapest fits the cap → that add-on free; else a discount up to the cap. The offer is stored as one AI
+  custom field (kind DISCOUNT, negative surcharge, replaced each negotiation turn); negative surcharges are taken off after
+  the margin (`discount_idr` in the breakdown). Reply: add-ons noted + costs rise → updated quote + offer / hold →
+  "Harga final tetap dikonfirmasi {{active_crafter_name}} di penawaran resmi". Before the gate opens, prices are not given.
 
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.

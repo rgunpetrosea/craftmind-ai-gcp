@@ -424,9 +424,10 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
                     ['Labor', breakdown.labor_idr],
                     ['Sourcing', breakdown.sourcing_idr],
                     ['Personalization', breakdown.personalization_idr],
-                    ['Custom requests', breakdown.custom_requests_idr],
+                    ['Custom requests & add-ons', breakdown.custom_requests_idr],
                     ['Site visit', breakdown.site_visit_idr],
                     ['Margin', breakdown.margin_idr],
+                    ['Discount', -(breakdown.discount_idr ?? 0)],
                   ] as const
                 ).map(([label, v]) => (
                   <div key={label} className="flex justify-between text-stone-600">

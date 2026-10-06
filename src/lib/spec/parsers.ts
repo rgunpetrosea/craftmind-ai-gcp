@@ -1,4 +1,4 @@
-import type { Dimensions, EmbossingType, LeatherEdgeFinish } from '@/lib/types';
+import type { Dimensions, EmbossingType, KitchenLayout, LeatherEdgeFinish } from '@/lib/types';
 
 /**
  * Shared offline parsers (Bahasa Indonesia + English) used by the category field definitions.
@@ -96,7 +96,9 @@ const WOODS: Array<[RegExp, string]> = [
   [/mangga|mango/i, 'Mango wood'],
   [/pinus|pine/i, 'Pine'],
   [/sungkai/i, 'Sungkai'],
-  [/plywood|multiplek|triplek/i, 'Plywood'],
+  [/plywood|multiplek\w*|triplek/i, 'Plywood (multipleks)'],
+  [/block ?board/i, 'Blockboard'],
+  [/\bmdf\b/i, 'MDF'],
   [/besi hollow|hollow/i, 'Besi hollow'],
   [/besi|iron/i, 'Besi (iron)'],
   [/stainless|baja|steel/i, 'Stainless steel'],
@@ -216,6 +218,95 @@ export function parseWoodPreference(text: string): string | undefined {
   if (/besi|industrial|metal/i.test(text)) return 'Jati (teak) + rangka besi';
   if (/hangat|klasik|gelap|coklat tua|tradisional/i.test(text)) return 'Jati (teak)';
   if (/terang|modern|skandinavia|scandi|putih|natural muda/i.test(text)) return 'Oak (kayu terang)';
+  return undefined;
+}
+
+/** Centimetres from "3m", "3 meter", "2,4 m", "300", "300 cm" (bare numbers below 10 are metres). */
+function toCm(value: string, unit?: string): number {
+  const n = Number(value.replace(',', '.'));
+  return /^m/i.test(unit ?? '') || (!unit && n < 10) ? Math.round(n * 100) : Math.round(n);
+}
+
+const LEN = '(\\d+(?:[.,]\\d+)?)\\s*(cm|m(?:eter)?)?\\b';
+
+/** "bentuk L", "L-shape", "huruf U", "lurus", "paralel". */
+export function parseKitchenLayout(text: string): KitchenLayout | undefined {
+  if (/\b(bentuk|model|layout|tipe|huruf|letter)\s*u\b|\bu[\s-]?shape/i.test(text)) return 'U_SHAPE';
+  if (/\b(bentuk|model|layout|tipe|huruf|letter)\s*l\b|\bl[\s-]?shape|kitchen ?set\s+l\b|\bsiku\b|pojok (dua|2) (sisi|dinding)/i.test(text)) return 'L_SHAPE';
+  if (/paralel|parallel|galley|berhadapan|dua sisi/i.test(text)) return 'GALLEY';
+  if (/\b(lurus|straight|satu sisi|1 sisi|satu dinding)\b|\bi[\s-]?shape/i.test(text)) return 'STRAIGHT';
+  return undefined;
+}
+
+/**
+ * Wall runs of built-in cabinetry, in cm: "L1: 300, L2: 200, H: 240", "dinding 1 3 m, dinding 2 2 m, tinggi 2,4 m",
+ * "bentuk L 3m x 2m tinggi 2.4m". Meters and bare numbers below 10 are converted.
+ */
+export function parseWallRuns(text: string): { l1?: number; l2?: number; h?: number } | undefined {
+  const grab = (re: string) => {
+    const m = new RegExp(re + LEN, 'i').exec(text);
+    return m ? toCm(m[m.length - 2], m[m.length - 1]) : undefined;
+  };
+  let l1 = grab('\\bL\\s*1\\s*[:=]?\\s*') ?? grab('\\b(?:dinding|sisi|tembok|wall)\\s*(?:1|pertama|utama|depan)\\D{0,12}?');
+  let l2 = grab('\\bL\\s*2\\s*[:=]?\\s*') ?? grab('\\b(?:dinding|sisi|tembok|wall)\\s*(?:2|kedua|samping)\\D{0,12}?');
+  const h = grab('\\bH\\s*[:=]?\\s*') ?? grab('\\b(?:tinggi|tingginya|height)\\D{0,20}?');
+  if ((l1 === undefined || l2 === undefined) && parseKitchenLayout(text) && parseKitchenLayout(text) !== 'STRAIGHT') {
+    // "bentuk L 3m x 2m", "L 300 dan 200": the two runs of the layout
+    const pair = new RegExp(LEN + '\\s*(?:x|×|\\*|dan|&|\\+|,)\\s*' + LEN, 'i').exec(text);
+    if (pair) {
+      l1 ??= toCm(pair[1], pair[2]);
+      l2 ??= toCm(pair[3], pair[4]);
+    }
+  }
+  return l1 || l2 || h ? { ...(l1 && { l1 }), ...(l2 && { l2 }), ...(h && { h }) } : undefined;
+}
+
+const STONE_TYPES: Array<[RegExp, string]> = [
+  [/granit\w*/i, 'Granite'],
+  [/marmer|marble/i, 'Marble'],
+  [/solid ?surface|corian/i, 'Solid surface'],
+  [/sintered(?: stone)?|quartz|kuarsa/i, 'Sintered stone'],
+];
+/** Named stones clients ask for without the material word. */
+const NAMED_STONES: Array<[RegExp, string, string]> = [
+  [/nero marquina/i, 'Marble', 'Nero Marquina'],
+  [/carrara/i, 'Marble', 'Carrara'],
+  [/calacatta/i, 'Marble', 'Calacatta'],
+  [/statuario/i, 'Marble', 'Statuario'],
+  [/emperador/i, 'Marble', 'Emperador'],
+  [/absolute black/i, 'Granite', 'Absolute Black'],
+  [/(black|star) galaxy/i, 'Granite', 'Black Galaxy'],
+];
+const STONE_STOP = /^(ya|aja|saja|dan|untuk|buat|yang|dengan|pakai|kak|mas|dong|sama|juga|atau)$/i;
+
+/**
+ * Kitchen top table with its stone or colour, as the client said it: "granit hitam Nero Marquina" → "Granite (Nero
+ * Marquina)", "marmer putih" → "Marble (putih)", "Carrara" → "Marble (Carrara)", "top HPL" → "HPL". A named stone keeps
+ * the material the client said (granit stays granite).
+ */
+export function parseCountertop(text: string): string | undefined {
+  const typeHit = STONE_TYPES.map(([re, label]) => ({ m: re.exec(text), label })).find((h) => h.m);
+  const named = NAMED_STONES.find(([re]) => re.test(text));
+  if (!typeHit && !named) return /\btop(\s+table)?\s+hpl\b|\bhpl\s+(untuk\s+)?top\b/i.test(text) ? 'HPL' : undefined;
+  const label = typeHit?.label ?? named![1];
+  let detail = named?.[2];
+  if (!detail && typeHit?.m) {
+    const after = text.slice(typeHit.m.index + typeHit.m[0].length).split(/[.,;!?\n]/)[0].trim().split(/\s+/);
+    const words: string[] = [];
+    for (const w of after) {
+      if (!w || STONE_STOP.test(w) || words.length === 3) break;
+      words.push(w);
+    }
+    detail = words.join(' ') || undefined;
+  }
+  return detail ? `${label} (${detail})` : label;
+}
+
+/** Built-in cabinetry core board from an everyday answer ("yang kuat / tahan lembap", "yang ekonomis"). */
+export function parseBoardPreference(text: string): string | undefined {
+  if (/\bmdf\b/i.test(text)) return 'MDF 18mm';
+  if (/block ?board|ekonomis|murah|hemat|terjangkau/i.test(text)) return 'Blockboard 18mm';
+  if (/plywood|multiplek\w*|kuat|tahan (lembap|lembab|air)|awet|kokoh/i.test(text)) return 'Plywood (multipleks) 18mm';
   return undefined;
 }
 

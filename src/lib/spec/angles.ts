@@ -75,12 +75,56 @@ const FLAT_CARD_HOLDER_VIEWS: Partial<Record<MockupAngle, Partial<AngleView>>> =
   ANGLE_2: { view: 'SLOT_FACE', label: 'Slot face', label_id: 'Sisi slot kartu', shot: 'the SLOT face of the flat card holder with cards inserted in every slot and the central pocket visible, top-down' },
 };
 
+/**
+ * Built-in interior cabinetry is shot like architecture, not like a product: a person standing in the finished room at
+ * eye level, realistic architectural lighting, then the opened cabinetry, then the finishing / hardware macro.
+ */
+const BUILT_IN_ROOM: Partial<Record<ConstructionType, string>> = { KITCHEN_SET: 'kitchen', WARDROBE: 'bedroom', TV_CONSOLE: 'living room' };
+
+function builtInView(angle: MockupAngle, room: string, construction: ConstructionType): Partial<AngleView> {
+  const eyeLevel = `eye-level human perspective (camera at about 160 cm, 24-28 mm architectural lens, straight verticals) standing inside the ${room}`;
+  switch (angle) {
+    // ANGLE_1 is the Perspective Master Shot; ANGLE_2 and ANGLE_3 are derived from it (geometry lock)
+    case 'ANGLE_1':
+      return {
+        view: 'INSTALLED_EYE_LEVEL',
+        label: 'Installed, eye level (master shot)',
+        label_id: 'Tampak terpasang di ruangan',
+        shot: `PERSPECTIVE MASTER SHOT: ${eyeLevel}, the built-in fully installed exactly as the MASTER LAYOUT describes, the whole layout readable in one frame, realistic architectural lighting (daylight from the window plus warm ceiling downlights)`,
+      };
+    case 'ANGLE_2':
+      return {
+        view: 'FUNCTIONAL_OPEN',
+        label: 'Doors & drawers open',
+        label_id: 'Pintu & laci terbuka',
+        shot: `same exact ${room} as Angle 1 from the same eye-level camera position, but the lower and upper doors are open 90 degrees and the drawers pulled out, revealing the interiors (shelves${construction === 'WARDROBE' ? ', hanging rail' : ''}, drawer boxes, rails and hinges)`,
+        isolation:
+          'Same exact layout as Angle 1, only the doors and drawers change. NEGATIVE: no layout changes, no moving windows, no new wall structures, no added or removed cabinets or appliances, no change of camera position or room.',
+      };
+    default:
+      return {
+        view: 'FINISH_HARDWARE_MACRO',
+        label: 'Finish & hardware macro',
+        label_id: 'Detail finishing & hardware',
+        shot: `close-up inside the same exact ${room} as Angle 1: the surface finish, the edge banding, a concealed hinge or drawer rail and a handle${construction === 'KITCHEN_SET' ? ', and the countertop edge' : ''}`,
+        isolation: 'Same materials, colours and hardware as Angle 1. NEGATIVE: no layout changes, no new materials.',
+      };
+  }
+}
+
 const index = (angle: MockupAngle) => MOCKUP_ANGLES.indexOf(angle);
 
 export function angleDef(category: CraftCategory, angle: MockupAngle, construction?: ConstructionType): AngleView {
   const base = (MATRIX[category] ?? MATRIX.CUSTOM_GENERIC)[index(angle)] ?? MATRIX.CUSTOM_GENERIC[0];
   const flat = construction === 'FLAT_CARD_HOLDER' || construction === 'PATTERNED_CARD_HOLDER';
-  return flat ? { ...base, ...FLAT_CARD_HOLDER_VIEWS[angle] } : base;
+  if (flat) return { ...base, ...FLAT_CARD_HOLDER_VIEWS[angle] };
+  const room = construction && category === 'FURNITURE' ? BUILT_IN_ROOM[construction] : undefined;
+  return room && construction ? { ...base, ...builtInView(angle, room, construction) } : base;
+}
+
+/** The room a built-in is installed in ("kitchen", "bedroom", "living room"), if it is a built-in. */
+export function builtInRoom(construction: ConstructionType): string | undefined {
+  return BUILT_IN_ROOM[construction];
 }
 
 /** View used when the crafter overrides the shot with a custom prompt: every field is available. */

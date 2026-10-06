@@ -55,7 +55,8 @@ export function classificationSchema(): Schema {
 export function extractionSchema(category: CraftCategory): Schema {
   const schema = schemaOf(category);
   const attributes = Object.fromEntries(Object.entries(schema.fields).map(([key, f]) => [key, fieldSchema(f)]));
-  const topics = schema.topics.filter((t) => t.deferrable).map((t) => t.id);
+  // (a topic id can have per-form-factor variants, e.g. FURNITURE "material" for loose furniture vs built-ins)
+  const topics = [...new Set(schema.topics.filter((t) => t.deferrable).map((t) => t.id))];
   return obj({
     message_intent: {
       type: Type.STRING,
@@ -105,7 +106,7 @@ export function extractionSchema(category: CraftCategory): Schema {
       description:
         'Every checklist topic the client has ALREADY answered anywhere in the chat, in ANY wording, even if it maps to no exact value ' +
         '(e.g. "lebih sering di saku celana belakang" answers size; "pengen yang tahan gores" answers material). Read the WHOLE history.',
-      items: { type: Type.STRING, enum: schema.topics.map((t) => t.id) },
+      items: { type: Type.STRING, enum: [...new Set(schema.topics.map((t) => t.id))] },
     },
     deferred_topics: {
       type: Type.ARRAY,
@@ -126,7 +127,7 @@ export function extractionSchema(category: CraftCategory): Schema {
         detected: { type: Type.BOOLEAN },
         reason: { type: Type.STRING },
       },
-      'detected = true ONLY when the client asks for something a leather/wood workshop cannot judge from standard crafting options: electronics (LED, chargers, GPS/NFC chips), safety certifications (fire/bullet proof), protected or illegal materials, mechanisms, medical claims. reason = one short sentence. Unusual but craftable details (hidden pocket, special size, engraving) are NOT non-standard.',
+      'detected = true ONLY when the client asks for something a leather/wood workshop cannot judge from standard crafting options: electronics (LED, chargers, GPS/NFC chips), safety certifications (fire/bullet proof), protected or illegal materials, mechanisms, medical claims. reason = one short sentence. Unusual but craftable details (hidden pocket, special size, engraving) are NOT non-standard. Furniture accessories every interior workshop fits (LED strip / under-cabinet lighting, touch or motion sensor switches, pop-up sockets / stop kontak, magic corner, carousel and pull-out racks) are standard add-ons, NEVER non-standard: put them in custom_fields.',
     ),
   });
 }

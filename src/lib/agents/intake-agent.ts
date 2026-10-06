@@ -29,7 +29,9 @@ import { shapeBubbles } from '@/lib/utils/bubbles';
 import { classificationSchema, extractionSchema } from '@/lib/spec/gemini-schema';
 import { referenceGuide } from '@/lib/spec/references';
 import { findGlossary, NON_STANDARD, PRICE_OR_TIMELINE, QUESTION, REQUEST_AS_QUESTION, withoutExplanationQuestions } from '@/lib/spec/glossary';
-import { DECLINE, FINISHED, num, parseLeatherPreference, parseWoodPreference } from '@/lib/spec/parsers';
+import { DECLINE, FINISHED, num, parseBoardPreference, parseLeatherPreference, parseWoodPreference } from '@/lib/spec/parsers';
+import { detectAddOns, withoutFurnitureAddOns } from '@/lib/spec/addons';
+import { isBuiltInFurniture } from '@/lib/spec/categories/furniture';
 import type {
   AttributeValue,
   ChatMessage,
@@ -191,7 +193,12 @@ export function applyAnswerToAsked(
   // 2. lifestyle answer to the material question → a concrete material
   if (topic.id === 'material') {
     const materialKey = schemaOf(spec.category).material_field;
-    const pref = spec.category === 'FURNITURE' ? parseWoodPreference(text) : parseLeatherPreference(text);
+    const pref =
+      spec.category !== 'FURNITURE'
+        ? parseLeatherPreference(text)
+        : isBuiltInFurniture(spec.construction_type)
+          ? parseBoardPreference(text)
+          : parseWoodPreference(text);
     if (pref) {
       attrs(out)[materialKey] = pref;
       return { spec: out, deferred: [], brief: { style_preference: text.slice(0, 80) } };
@@ -286,6 +293,7 @@ Decide which ONE craft category the conversation is about and, if possible, the 
 Use the photo/sketch first, then the words. Categories and form factors:
 ${visionGuide()}
 Rules: a sleeve with no fold line is FLAT_CARD_HOLDER, never BIFOLD_WALLET. Wallets/card holders are SMALL_GOODS, not BAG.
+Built-in kitchen sets, wardrobes ("lemari pakaian") and TV consoles / media walls are FURNITURE KITCHEN_SET / WARDROBE / TV_CONSOLE, not CABINET or SHELF.
 A bifold described as long / panjang / tall / breast-pocket / suit wallet is LONG_BIFOLD_WALLET (with a zipper running around it: ZIP_AROUND_LONG_WALLET).
 If the client clearly switched to a different product, classify the NEW product. If nothing is known yet, construction_type = UNSPECIFIED
 and pick the most likely category (CUSTOM_GENERIC if unclear).`;
@@ -316,6 +324,18 @@ DIMENSIONS (dimension_mode + reference_object + dimensions_cm), clients rarely k
 - No cm, but an OBJECT TO HOLD ("muat iPad Air 11 inch", "laptop 14 inch", "dokumen A4") → REFERENCE_BASED, reference_object = the object,
   dimensions_cm = the object + ~2 cm room per side, deeper (≥6 cm) if accessories like a charger go in too.
 - Furniture that must fit a room / bedside / wall and no measurements → PENDING_SITE_VISIT, dimensions 0 (we measure on site).
+- Built-in cabinetry (KITCHEN_SET, WARDROBE, TV_CONSOLE): primary_material is the board core ("kuat / tahan lembap" → "Plywood
+  (multipleks) 18mm", "ekonomis" → "Blockboard 18mm"); HPL / duco / melamic → finish_coating; hinges & rails "soft close / pelan"
+  → SOFT_CLOSE, Blum / Hafele → PREMIUM_SOFT_CLOSE; top table granit / marmer / solid surface → countertop; "sampai plafon /
+  full plafon" → floor_to_ceiling true; appliances the cabinetry houses ("kulkas 2 pintu", "kompor tanam", "oven") → appliances.
+  Kitchen layout: "bentuk L / letter L" → layout_shape L_SHAPE (U, galley, lurus likewise); dimensions_cm.length = main wall
+  L1, second_wall_cm = L2, height = H, width = cabinet depth (60): "L1 300, L2 200, H 240" or "L 3m x 2m tinggi 2,4m" →
+  length 300, second_wall_cm 200, height 240, width 60. Positions ("jendela di pojok kiri, kulkas di kanan") → layout_notes.
+  Measurements the client gives are ALWAYS filled, also when a site visit is pending (they are the provisional size).
+  Never ask or fill joinery / knock-down for built-ins: they are installed permanently.
+- Furniture add-ons are standard, never non_standard_request: LED strip / under-cabinet lighting, touch or motion sensor
+  switches, pop-up sockets / stop kontak, magic corner, carousel, pull-out racks → one custom_fields entry each (label =
+  the accessory, value = quantity / metres if said). A discount request is not a spec change.
 - Otherwise UNSPECIFIED with dimensions 0. Known references for calibration:
 ${referenceGuide(category) || '- (none for this category; use your own knowledge of real product sizes)'}
 
@@ -491,7 +511,19 @@ export async function runIntakeAgent(input: {
 
   // Heuristics back Gemini up: explicit "?" questions it missed, and clear non-standard keywords.
   if (!questions.length) questions = detectQuestions(burstText, spec.category);
-  nonStandard ??= detectNonStandard(burstText);
+  // Furniture accessories (LED strip, sensor switches, pop-up sockets, magic corner...) are standard add-ons: they are
+  // taken out before the out-of-scope check, and a Gemini flag that is only about them is dropped.
+  const scopeText = spec.category === 'FURNITURE' ? withoutFurnitureAddOns(burstText) : burstText;
+  if (
+    nonStandard &&
+    spec.category === 'FURNITURE' &&
+    detectAddOns(burstText).length &&
+    /led|lampu|light|sensor|socket|stop ?kontak|colokan|listrik|electric|elektronik|magic|carousel|pull[\s-]?out/i.test(nonStandard) &&
+    !detectNonStandard(scopeText)
+  ) {
+    nonStandard = undefined;
+  }
+  nonStandard ??= detectNonStandard(scopeText);
 
   // heuristic brief first, Gemini's richer brief over it, then what this turn's answer told us
   const brief = { ...heuristicBrief(input.messages, spec), ...Object.fromEntries(Object.entries(aiBrief).filter(([, v]) => typeof v === 'string' && v.trim())), ...answerBrief };
@@ -562,7 +594,8 @@ CONVERSATIONAL RULES:
 - MOCKUPS: when the client asks to see a picture / mockup / draft / "gambaran", or the core specification is complete, CALL
   generate_mockup_tool (it renders the image and sends it in this chat). Never say the picture comes later, after
   confirmation, with the quotation or during production; if you call the tool, your text may say it's being prepared.
-  Call it ONCE per reply with every view you want in "angles" (e.g. [1, 2, 3]). Pick the views listed in the tool:
+  Call it ONCE per reply with every view in "batch_job" (e.g. [{"angle": 1}, {"angle": 2, "derived_from": 1}]), never once
+  per angle. Pick the views listed in the tool:
   "posisi terbuka" / "bagian dalam" / "slot kartu" means the OPEN INTERIOR angle (never re-render the closed exterior for it). Fill adjustment only for a visual change the spec doesn't capture.
 - Never promise prices, discounts or dates. No markdown headings, no bullet lists.`;
 
@@ -629,6 +662,10 @@ export async function composeReply(input: {
   profile?: CrafterProfile;
   /** generate_mockup_tool runs right after this reply (new draft, or a revision of one the client saw). */
   mockupComing?: 'NEW' | 'REVISION';
+  /** Required spec gate: false while a mandatory slot is missing (the model is not offered generate_mockup_tool). */
+  mockupAllowed?: boolean;
+  /** The client asked for a picture before the gate opened: tell them it follows once the open questions are answered. */
+  mockupDeferred?: boolean;
 }): Promise<ComposedReply> {
   const questions = input.questions ?? [];
   // First turn: brand greeting bubble + ONE follow-up bubble (max 2 bubbles).
@@ -645,7 +682,13 @@ export async function composeReply(input: {
   const siteVisit = input.spec.dimension_mode === 'PENDING_SITE_VISIT' ? '\n\nUntuk ukurannya nanti kami jadwalkan survei ukur ke lokasi kakak.' : '';
   // the images follow this text: say so, so the chat never ends on a bare acknowledgment
   const mockupAck =
-    input.mockupComing === 'REVISION' ? 'Siap kak, gambarnya aku sesuaikan dulu ya.' : input.mockupComing === 'NEW' ? 'Aku buatin gambaran desainnya dulu ya kak.' : '';
+    input.mockupComing === 'REVISION'
+      ? 'Siap kak, gambarnya aku sesuaikan dulu ya.'
+      : input.mockupComing === 'NEW'
+        ? 'Aku buatin gambaran desainnya dulu ya kak.'
+        : input.mockupDeferred
+          ? 'Gambarnya langsung aku kirim begitu beberapa detail ini lengkap ya kak.'
+          : '';
   const planned = questions.length
     ? [templateAnswer(input.spec, questions), ...questionBubbles(input.plan.ask)].join('\n\n') + siteVisit
     : input.plan.ask.length
@@ -659,7 +702,7 @@ export async function composeReply(input: {
       .map((g) => `- ${g.term}: ${g.explanation}`)
       .join('\n');
     const r = await generateTextWithTools({
-      tools: [mockupToolDeclaration(input.spec)],
+      tools: input.mockupAllowed === false ? [] : [mockupToolDeclaration(input.spec)],
       models: MODEL_CHAINS.fast,
       systemInstruction: replyInstruction(input.profile),
       parts: [
@@ -683,7 +726,11 @@ export async function composeReply(input: {
             (input.brief ? `CLIENT BRIEF (internal): ${JSON.stringify(input.brief)}\n` : '') +
             (input.mockupComing
               ? `MOCKUP: ${input.mockupComing === 'REVISION' ? 'an updated picture with the requested change' : 'a draft picture'} is rendered and sent right after your text (do not call generate_mockup_tool again); acknowledge it in one short sentence.\n`
-              : '') +
+              : input.mockupDeferred
+                ? 'MOCKUP: the client wants a picture, but required details are still open. Do NOT render now: say in one short sentence that the picture is sent as soon as the questions in ASK NOW are answered, then ask them.\n'
+                : input.mockupAllowed === false
+                  ? 'MOCKUP: required details are still open, so no picture this turn; only ask the ASK NOW questions.\n'
+                  : '') +
             `\nALREADY ANSWERED (never ask again):\n${alreadyAnswered(input.spec, input.progress, input.brief) || '- (nothing yet)'}\n` +
             `\nRecent chat:\n${transcriptText(input.messages.slice(-10))}\n\nASK NOW:\n${topics || '- (nothing; just acknowledge)'}`,
         },

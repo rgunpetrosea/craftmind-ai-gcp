@@ -1,6 +1,7 @@
 import { constructionDef, describeFields } from '@/lib/spec/catalog';
 import { primaryMaterial } from '@/lib/spec/describe';
 import { angleDef, type AngleView } from '@/lib/spec/angles';
+import { isFullHeightBuiltIn } from '@/lib/spec/categories/furniture';
 import type { MockupAngle, Specifications } from '@/lib/types';
 import { svgToDataUrl } from '@/lib/utils/format';
 
@@ -65,7 +66,18 @@ function productShape(spec: Specifications, base: string, shade: string, stitch:
       const back = c === 'CHAIR' ? `<rect x="250" y="170" width="16" height="200" fill="${shade}"/><rect x="414" y="170" width="16" height="200" fill="${shade}"/><rect x="250" y="180" width="180" height="60" rx="6" fill="${base}"/>` : '';
       return `${back}<rect x="230" y="330" width="220" height="26" rx="4" fill="${base}"/><rect x="245" y="356" width="14" height="120" fill="${shade}"/><rect x="421" y="356" width="14" height="120" fill="${shade}"/>`;
     }
-    if (c === 'SHELF' || c === 'CABINET') {
+    if (c === 'KITCHEN_SET') {
+      // base run with countertop, wall cabinets, tall fridge unit; full height: wall cabinets and tall unit meet the
+      // ceiling line (never the standard 80 cm cabinets with a gap above)
+      const full = isFullHeightBuiltIn(spec);
+      const top = full ? 112 : 170;
+      const doors = [0, 1, 2, 3].map((i) => `<rect x="${150 + i * 70}" y="350" width="64" height="100" rx="3" fill="${shade}" opacity=".5"/>`).join('');
+      const uppers = [0, 1, 2, 3].map((i) => `<rect x="${150 + i * 70}" y="${top}" width="64" height="${260 - top}" rx="3" fill="${base}"/>`).join('');
+      const ceiling = full ? '<line x1="120" y1="110" x2="570" y2="110" stroke="#6b6b6b" stroke-width="3"/>' : '';
+      const tallTop = full ? 112 : 150;
+      return `${ceiling}<rect x="140" y="330" width="290" height="14" fill="#9a9a9a"/><rect x="140" y="344" width="290" height="112" fill="${base}"/>${doors}${uppers}<rect x="440" y="${tallTop}" width="110" height="${456 - tallTop}" rx="4" fill="${base}"/><rect x="452" y="${tallTop + 14}" width="86" height="${442 - tallTop - 14}" rx="4" fill="#c8ccd0"/><line x1="495" y1="${tallTop + 14}" x2="495" y2="${442 - 2}" stroke="#9aa0a6" stroke-width="3"/>`;
+    }
+    if (c === 'SHELF' || c === 'CABINET' || c === 'WARDROBE' || c === 'TV_CONSOLE') {
       const inner = c === 'SHELF' ? [260, 320, 380].map((y) => `<rect x="220" y="${y}" width="240" height="10" fill="${shade}"/>`).join('') : `<line x1="340" y1="215" x2="340" y2="460" stroke="${shade}" stroke-width="4"/><circle cx="325" cy="340" r="5" fill="#c9a24a"/><circle cx="355" cy="340" r="5" fill="#c9a24a"/>`;
       return `<rect x="210" y="200" width="260" height="270" rx="4" fill="${base}"/>${inner}`;
     }

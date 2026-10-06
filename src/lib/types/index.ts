@@ -5,7 +5,8 @@
 export type SessionState = 'IDLE' | 'REQUIREMENT_GATHERING' | 'PENDING_CRAFTER_APPROVAL' | 'APPROVED';
 export type AutomationMode = 'AI_COPILOT' | 'PARTIAL_PAUSE' | 'FULL_MANUAL';
 /** CONFUSION_RULE = loop / unproductive-chat detector; SESSION_LIMIT = AI turn budget for the session was used up. */
-export type EscalationReason = 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OVERRIDE' | 'SESSION_LIMIT';
+/** NON_STANDARD: outside the crafting scope (electronics, certifications...). PRICE_NEGOTIATION: discount far below floor. */
+export type EscalationReason = 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OVERRIDE' | 'SESSION_LIMIT' | 'NON_STANDARD' | 'PRICE_NEGOTIATION';
 /**
  * Isolated craft categories. Each has its own attribute schema; attributes are never shared or mixed across categories.
  * Field definitions (labels, UI, Gemini schema, parsers) live in `src/lib/spec/categories/*`.
@@ -52,6 +53,9 @@ export type BagConstruction =
 export type FootwearConstruction = 'DERBY_SHOES' | 'OXFORD_SHOES' | 'LOAFERS' | 'CHELSEA_BOOTS' | 'SANDALS' | 'OTHER_FOOTWEAR';
 
 export type FurnitureConstruction =
+  | 'KITCHEN_SET'
+  | 'WARDROBE'
+  | 'TV_CONSOLE'
   | 'DINING_TABLE'
   | 'COFFEE_TABLE'
   | 'DESK'
@@ -168,7 +172,11 @@ export interface FootwearAttributes {
   heel_height_cm: number;
 }
 
-export type FurnitureFinish = 'UNSPECIFIED' | 'NATURAL_OIL' | 'WAX' | 'WATER_BASED_LACQUER' | 'PU_VARNISH' | 'DUCO_PAINT' | 'POWDER_COAT';
+export type FurnitureFinish = 'UNSPECIFIED' | 'NATURAL_OIL' | 'WAX' | 'WATER_BASED_LACQUER' | 'PU_VARNISH' | 'DUCO_PAINT' | 'POWDER_COAT' | 'HPL' | 'MELAMIC';
+/** Hinges and drawer rails of built-in cabinetry. */
+export type FurnitureHardware = 'UNSPECIFIED' | 'STANDARD' | 'SOFT_CLOSE' | 'PREMIUM_SOFT_CLOSE';
+/** Kitchen run layout. */
+export type KitchenLayout = 'UNSPECIFIED' | 'STRAIGHT' | 'L_SHAPE' | 'U_SHAPE' | 'GALLEY';
 export type JoineryType =
   | 'UNSPECIFIED'
   | 'MORTISE_TENON'
@@ -191,6 +199,20 @@ export interface FurnitureAttributes {
   upholstery: string;
   seating_capacity: number;
   assembly: FurnitureAssembly;
+  /** Built-ins: hinges & drawer rails grade. */
+  hardware_fittings: FurnitureHardware;
+  /** Kitchen sets: countertop / top table, material + stone or colour as said: "Granite (Nero Marquina)". */
+  countertop: string;
+  /** Built-ins: cabinetry runs floor to ceiling ("sampai plafon"), no top gap. */
+  floor_to_ceiling: boolean;
+  /** Built-ins: appliances the cabinetry houses, e.g. "kulkas 2 pintu, kompor tanam". */
+  appliances: string;
+  /** Kitchen sets: run layout; dimensions_cm.length is the main wall (L1). */
+  layout_shape: KitchenLayout;
+  /** Kitchen sets: second wall run (L2) of an L / U / galley layout, cm. */
+  second_wall_cm: number;
+  /** Built-ins: where things are in the room ("jendela di pojok kiri, kulkas di kanan"), the client's words. */
+  layout_notes: string;
 }
 
 /** Fallback for any other bespoke craft (apparel, jewelry, sports gear...): a few universal fields + custom fields. */
@@ -227,9 +249,11 @@ export interface CustomField {
   id: string;
   label: string;
   value: string;
-  /** Optional price impact the crafter assigns; added to the quotation. */
+  /** Price impact; added to the quotation. A negative value is a discount, taken off after the margin. */
   surcharge_idr: number;
   source: 'AI' | 'CRAFTER';
+  /** ADD_ON: catalog accessory (LED strip, pop-up socket, magic corner...); DISCOUNT: price reduction / freebie. */
+  kind?: 'ADD_ON' | 'DISCOUNT';
 }
 
 interface SpecOf<C extends CraftCategory> {
@@ -483,6 +507,12 @@ export interface CategoryPreset {
   site_visit_fee_idr?: number;
   /** House material used when the client only says "kulit" / "kayu" (stock_id of an inventory item). */
   default_stock_id?: string;
+  /** Lowest acceptable margin over cost for AI-negotiated prices (default 0.15). */
+  floor_margin_pct?: number;
+  /** Largest discount the AI may offer on its own, as a share of the quote (default 0.05). */
+  max_auto_discount_pct?: number;
+  /** Add-on catalog price overrides by add-on id (see spec/addons.ts). */
+  addon_prices_idr?: Record<string, number>;
   /** Workshop defaults applied when the client leaves a field open ("terserah"), keyed by attribute name of this category. */
   defaults: Partial<Record<string, string | number | boolean>>;
 }
@@ -523,6 +553,6 @@ export interface ClientQuestion {
 export interface OrchestratorResult {
   order: OrderPayload;
   /** SUPERSEDED: a newer client message arrived mid-run, the reply was dropped. NOTHING_NEW: already answered. */
-  stage: 'GATHERING' | 'ANSWERED' | 'QUOTED' | 'ESCALATED' | 'REFUSED' | 'SKIPPED_TAKEOVER' | 'SUPERSEDED' | 'NOTHING_NEW';
+  stage: 'GATHERING' | 'ANSWERED' | 'QUOTED' | 'NEGOTIATED' | 'ESCALATED' | 'REFUSED' | 'SKIPPED_TAKEOVER' | 'SUPERSEDED' | 'NOTHING_NEW';
   reply?: string;
 }

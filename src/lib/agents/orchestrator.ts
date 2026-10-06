@@ -1,11 +1,14 @@
 import { composeReply, currentBurst, mergeBrief, runIntakeAgent, unprocessedClientMessages } from '@/lib/agents/intake-agent';
 import { runPatternAgent, templatePattern } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
-import { executeGenerateMockupTool, type MockupToolArgs } from '@/lib/agents/tools';
+import { decideNegotiation, DISCOUNT_REQUEST, negotiationHandoverMessage, negotiationReply, offerField, requestedPrice } from '@/lib/agents/negotiation';
+import { batchJobFor, executeGenerateMockupTool, type MockupToolArgs } from '@/lib/agents/tools';
 import { isGenericMaterial, resolveGenericMaterial } from '@/lib/agents/inventory-agent';
 import { getStore } from '@/lib/gcp/firestore';
 import { currentAngles, renderRemainingAnglesInBackground, reusableRender } from '@/lib/mockups';
-import { confirmationMockupAngles, defaultMockupAngles, MOCKUP_ANGLES } from '@/lib/spec/angles';
+import { applyAddOns } from '@/lib/spec/addons';
+import { isBuiltInFurniture } from '@/lib/spec/categories/furniture';
+import { confirmationMockupAngles, defaultMockupAngles } from '@/lib/spec/angles';
 import {
   constructionDef,
   mergeCustomFields,
@@ -40,7 +43,7 @@ import { isWithinScope, requestedItemLabel } from '@/lib/spec/offerings';
 import { specCardText } from '@/lib/spec/describe';
 import type { CategoryPreset, ChatMessage, ClientBrief, Dimensions, IntakeProgress, InventoryItem, OrchestratorResult, OrderPayload, Specifications } from '@/lib/types';
 import { shapeBubbles } from '@/lib/utils/bubbles';
-import { nowIso } from '@/lib/utils/format';
+import { formatIDR, nowIso } from '@/lib/utils/format';
 import {
   expirePartialPause,
   HANDOFF_MESSAGES,
@@ -215,7 +218,9 @@ function completeForBom(raw: Specifications, inventory: InventoryItem[], preset:
   const woodish = spec.category === 'FURNITURE' || /kayu|wood/i.test(material);
   if (material && isGenericMaterial(material) && (leatherish || woodish)) {
     const color = String(a.color ?? a.color_stain ?? '');
-    const item = resolveGenericMaterial(material, color, inventory, preset, woodish ? 'wood_metal' : 'leather');
+    // built-in cabinetry is board work: its house default is plywood, not a solid-wood plank
+    const house = isBuiltInFurniture(spec.construction_type) ? { ...preset, default_stock_id: 'STK-BD-PLY-18' } : preset;
+    const item = resolveGenericMaterial(material, color, inventory, house, woodish ? 'wood_metal' : 'leather');
     if (item) a[key] = item.name;
   }
   return spec;
@@ -230,10 +235,15 @@ function hasSizeAndMaterial(spec: Specifications): boolean {
   return !!d && d.length > 0 && d.width > 0 && d.height > 0;
 }
 
+/** Deterministic pattern + stock + price (with the breakdown) of the spec as it would be locked. */
+function priceSpec(spec: Specifications, inventory: InventoryItem[], preset: CategoryPreset) {
+  const full = finalizeSpecifications(spec, preset.defaults);
+  return assembleQuote(templatePattern(full, preset), full, inventory, preset);
+}
+
 /** Deterministic pattern + stock + price for the dashboard while gathering (the locked spec gets the full pass). */
 function quickQuote(spec: Specifications, inventory: InventoryItem[], preset: CategoryPreset): Partial<OrchestratorFields> {
-  const full = finalizeSpecifications(spec, preset.defaults);
-  const quote = assembleQuote(templatePattern(full, preset), full, inventory, preset);
+  const quote = priceSpec(spec, inventory, preset);
   return { material_sourcing: quote.material_sourcing, pattern_and_bom: quote.pattern_and_bom };
 }
 
@@ -338,7 +348,13 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const presetFor = (c: OrderPayload['craft_category']) => presets.find((p) => p.category === c)!;
   // Fill what the client never needs to say: missing axes (e.g. strap thickness) and the concrete stocked material
   // behind "kulit" / "cokelat tua". Pattern, BOM and price can then be computed straight away.
-  const spec0 = completeForBom(intake.specifications, inventory, presetFor(intake.specifications.category));
+  // ...and furniture add-ons (LED strip, pop-up socket, magic corner...) become priced custom fields, so the quote follows
+  const allClientText = messages.filter((m) => m.sender === 'CLIENT' && m.text).map((m) => m.text).join('\n');
+  const spec0 = applyAddOns(
+    completeForBom(intake.specifications, inventory, presetFor(intake.specifications.category)),
+    allClientText,
+    presetFor(intake.specifications.category),
+  );
   // Slot-filling check BEFORE planning: a topic the client already answered in everyday words ("saku celana belakang")
   // is settled. Deferrable topics then take the form factor's standard value; they are never asked again.
   const answeredDeferrable = intake.answered_topics.filter((key) => {
@@ -408,7 +424,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   // "terserah" (deferring topics), answering a topic in everyday words and "itu saja" all move the intake forward too
   const settledSomething = intake.deferred_topics.length > 0 || answeredDeferrable.length > 0 || intake.client_finished || revisionRequest;
   const productive =
-    isCraft && (designContext || settledSomething || blockingQuestions.length > 0 || hasNewProductDetails(known, spec0, order.client_brief, client_brief));
+    isCraft &&
+    (designContext || settledSomething || blockingQuestions.length > 0 || DISCOUNT_REQUEST.test(burstText) || hasNewProductDetails(known, spec0, order.client_brief, client_brief));
   const frustratedOnly = isFrustrated(burstText) && !designContext;
   const strike = !isCraft || frustratedOnly || (!productive && !wasLocked);
   if (conversation) {
@@ -441,9 +458,14 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const renderCount = stored.mockup_render_count ?? 0;
   const visualRequest = VISUAL_REQUEST.test(burstText);
   // generate_mockup_tool triggers: the client asks for a picture, or the core specification just became complete
-  const coreComplete = isClassified(spec0) && plan.missing_required.length === 0;
-  const firstCoreComplete = coreComplete && renderCount === 0 && !currentAngles(order).length;
-  const mockupComing = revisionRequest ? 'REVISION' : visualRequest || firstCoreComplete ? 'NEW' : undefined;
+  // REQUIRED SPEC GATE: no mockup (any trigger: picture request, model tool call, first draft, revision) while a mandatory
+  // slot is missing; the turn only asks for it. Slots are filled from this very message first (intake ran above), so
+  // "engsel slow-motion, granit hitam Nero Marquina" closes those slots before the gate is checked.
+  const mockupGateOpen = isClassified(spec0) && plan.missing_required.length === 0;
+  const firstCoreComplete = mockupGateOpen && renderCount === 0 && !currentAngles(order).length;
+  const mockupComing = !mockupGateOpen ? undefined : revisionRequest ? 'REVISION' : visualRequest || firstCoreComplete ? 'NEW' : undefined;
+  // the client asked for a picture too early: say it follows once the open questions are answered
+  const mockupDeferred = !mockupGateOpen && (visualRequest || revisionRequest);
   // the client's words decide the view when they asked for a picture ("posisi terbuka" → open interior angle)
   const mockupArgs = (call?: MockupToolArgs): MockupToolArgs => ({
     ...call,
@@ -488,13 +510,63 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       intake: { ...progress, vision_notes: intake.vision_notes, processed_message_id },
     });
     if (!isAiBlocked(latest)) {
-      setAutomationMode(latest, 'FULL_MANUAL', 'CLIENT_REQUEST', undefined, undefined, intake.non_standard_reason);
+      setAutomationMode(latest, 'FULL_MANUAL', 'NON_STANDARD', undefined, undefined, intake.non_standard_reason);
       await store.saveOrder(latest);
       await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
       await sendToClient(latest, 'SYSTEM', renderTemplate(HANDOFF_MESSAGES.NON_STANDARD, profile));
       await notifyCrafter(latest, intake.non_standard_reason);
     }
     return { order: latest, stage: 'ESCALATED', reply: renderTemplate(HANDOFF_MESSAGES.NON_STANDARD, profile) };
+  }
+
+  // --- Discount request (+ maybe add-ons) once the quote is computable: updated quote + modest offer / polite hold, or
+  // hand over when the price asked is far below the floor without new add-ons (see agents/negotiation.ts) -------
+  if (isCraft && DISCOUNT_REQUEST.test(burstText) && mockupGateOpen) {
+    const preset = presetFor(spec0.category);
+    // the previous AI offer is replaced, never stacked; discounts the crafter entered stay
+    const base = { ...spec0, custom_fields: spec0.custom_fields.filter((f) => !(f.kind === 'DISCOUNT' && f.source === 'AI')) } as Specifications;
+    const before = priceSpec(base, inventory, preset);
+    const newAddOns = base.custom_fields.filter((f) => f.kind === 'ADD_ON' && !known.custom_fields.some((k) => k.label === f.label));
+    const decision = decideNegotiation({ breakdown: before.breakdown, preset, requested: requestedPrice(burstText, before.breakdown.total_idr), newAddOns });
+    const toStore = (s: Specifications) => (wasLocked ? finalizeSpecifications(s, preset.defaults) : s);
+
+    if (decision.kind === 'ESCALATE') {
+      const latest = await commit(orderId, {
+        client_brief,
+        craft_category: base.category,
+        specifications: toStore(base),
+        material_sourcing: before.material_sourcing,
+        pattern_and_bom: before.pattern_and_bom,
+        intake: { ...progress, last_asked: [], vision_notes: intake.vision_notes, processed_message_id },
+      });
+      const reply = negotiationHandoverMessage(profile);
+      if (!isAiBlocked(latest)) {
+        const note = `Klien minta ${formatIDR(decision.requested_idr ?? 0)}, ${Math.round((decision.below_floor ?? 0) * 100)}% di bawah harga dasar ${formatIDR(decision.floor_idr)} (penawaran ${formatIDR(decision.total_idr)}), tanpa tambahan add-on`;
+        setAutomationMode(latest, 'FULL_MANUAL', 'PRICE_NEGOTIATION', undefined, undefined, note);
+        await store.saveOrder(latest);
+        await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
+        await sendToClient(latest, 'SYSTEM', reply);
+        await notifyCrafter(latest, note);
+      }
+      return { order: latest, stage: 'ESCALATED', reply };
+    }
+
+    const offer = offerField(decision);
+    const offered = (offer ? { ...base, custom_fields: [...base.custom_fields, offer] } : base) as Specifications;
+    const after = priceSpec(offered, inventory, preset);
+    const latest = await commit(orderId, {
+      client_brief,
+      craft_category: offered.category,
+      specifications: toStore(offered),
+      material_sourcing: after.material_sourcing,
+      pattern_and_bom: after.pattern_and_bom,
+      intake: { ...progress, last_asked: [], vision_notes: intake.vision_notes, processed_message_id },
+    });
+    const reply = negotiationReply(decision, after.breakdown.total_idr, newAddOns, profile);
+    const sent = await say(reply);
+    // new add-ons change the look of a draft the client has seen
+    if (sent && revisionRequest) await executeGenerateMockupTool(orderId, profile, mockupArgs());
+    return { order: latest, stage: sent ? 'NEGOTIATED' : 'SKIPPED_TAKEOVER', reply };
   }
 
   // --- Q&A: the client asked what something means / how it will look → answer before locking anything ---
@@ -515,6 +587,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       profile,
       questions: intake.questions,
       mockupComing,
+      mockupAllowed: mockupGateOpen,
+      mockupDeferred,
     });
     const latest = await commit(orderId, {
       client_brief,
@@ -535,7 +609,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       },
     });
     const sent = await say(reply.text);
-    if (sent && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
+    if (sent && mockupGateOpen && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
     return { order: latest, stage: sent ? 'ANSWERED' : 'SKIPPED_TAKEOVER', reply: reply.text };
   }
 
@@ -561,6 +635,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       brief: client_brief,
       profile,
       mockupComing,
+      mockupAllowed: mockupGateOpen,
+      mockupDeferred,
     });
     const latest = await commit(orderId, {
       client_brief,
@@ -571,7 +647,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       ...autoBom,
     });
     const sent = await say(reply.text);
-    if (sent && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
+    if (sent && mockupGateOpen && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
     return { order: latest, stage: sent ? 'GATHERING' : 'SKIPPED_TAKEOVER', reply: reply.text };
   }
 
@@ -613,7 +689,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   if (sent && wantsRender) {
     // one render round for the whole set (or the hand-off message once the render cap is reached); any review angle
     // outside the set (a bag's side profile) follows in the background for the crafter
-    const tool = await executeGenerateMockupTool(orderId, profile, mockupArgs({ angles: confirmationSet.map((a) => MOCKUP_ANGLES.indexOf(a) + 1) }));
+    // single pass: [{ angle: 1 }, { angle: 2, derived_from: 1 }, { angle: 3, derived_from: 1 }]
+    const tool = await executeGenerateMockupTool(orderId, profile, mockupArgs({ batch_job: batchJobFor(confirmationSet) }));
     if (tool.status === 'SENT') renderRemainingAnglesInBackground(orderId);
   } else if (sent && needsBuild && (latest.media_assets.mockup_angles?.length ?? 0) < 3) {
     // the draft is reused: only the crafter's review angles are missing (current ones are skipped)

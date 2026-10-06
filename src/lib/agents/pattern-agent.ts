@@ -1,6 +1,7 @@
 import { Type, type Schema } from '@google/genai';
 import { generateStructured, isGeminiConfigured, MODEL_CHAINS } from '@/lib/gcp/gemini';
 import { bagHasStrap } from '@/lib/spec/categories/bag';
+import { isBuiltInFurniture, isFullHeightBuiltIn } from '@/lib/spec/categories/furniture';
 import { constructionDef, normalizeSpecifications, schemaOf } from '@/lib/spec/catalog';
 import { specLines } from '@/lib/spec/describe';
 import type { BomComponent, CategoryPreset, Dimensions, PatternAndBom, Specifications } from '@/lib/types';
@@ -114,11 +115,121 @@ function footwear(spec: Extract<Specifications, { category: 'FOOTWEAR' }>, add: 
   if (a.heel_height_cm > 0) add('Heel stack lift', Math.max(2, Math.round(a.heel_height_cm / 0.6)), dim(7, 7));
 }
 
+/** Kitchen standard heights (cm): base cabinets incl. plinth, splashback gap, standard wall cabinets. */
+const KITCHEN = { base: 85, splash: 60, upper: 80, fridgeBay: 100 };
+
+/**
+ * Total linear run of a kitchen: L-shape = L1 + L2 - one corner overlap (the depth), U-shape = L1 + 2 x L2 - two
+ * corners, galley = both runs, straight = L1. "300 + 200 - 60 = 440 cm" for an L.
+ */
+export function kitchenRun(spec: Extract<Specifications, { category: 'FURNITURE' }>): number {
+  const { length: L1, width: W } = dimsOf(spec);
+  const L2 = spec.attributes.second_wall_cm;
+  switch (spec.attributes.layout_shape) {
+    case 'L_SHAPE':
+      return L2 > 0 ? L1 + L2 - W : L1;
+    case 'U_SHAPE':
+      return L2 > 0 ? L1 + 2 * L2 - 2 * W : L1;
+    case 'GALLEY':
+      return L2 > 0 ? L1 + L2 : L1;
+    default:
+      return L1;
+  }
+}
+
+const hasFridge = (spec: Extract<Specifications, { category: 'FURNITURE' }>) =>
+  /kulkas|lemari es|refrigerator|fridge/i.test(`${spec.attributes.appliances} ${spec.attributes.layout_notes}`);
+
+/**
+ * Door / drawer layout of built-in cabinetry, shared by the cut list and the hardware list.
+ * Kitchen: the cabinet run is the aggregated wall run minus the fridge bay (when a fridge is built in), in 60 cm modules
+ * (door + drawer stack every other module) under 60 cm wall modules. Wall cabinets are 80 cm, or run up to the ceiling
+ * when `floor_to_ceiling` is set or the overall height reaches 240 cm. Wardrobe: 100 cm two-door modules. TV console:
+ * 2 drawers + 2 flap doors.
+ */
+function builtInLayout(spec: Extract<Specifications, { category: 'FURNITURE' }>) {
+  const { length: L, width: W, height: H } = dimsOf(spec);
+  switch (spec.construction_type) {
+    case 'KITCHEN_SET': {
+      const run = kitchenRun(spec);
+      const fridge = hasFridge(spec);
+      const cabinetRun = Math.max(60, run - (fridge ? KITCHEN.fridgeBay : 0));
+      const modules = Math.max(1, Math.ceil(cabinetRun / 60));
+      const fullHeight = isFullHeightBuiltIn(spec);
+      const upperH = fullHeight ? Math.max(KITCHEN.upper, H - KITCHEN.base - KITCHEN.splash) : KITCHEN.upper;
+      const drawers = Math.ceil(modules / 2) * 3;
+      return { L: run, W, H, modules, upperH, doors: modules * 2 - Math.ceil(modules / 2) + (fridge ? 1 : 0), drawers, cabinetRun, fridge, fullHeight };
+    }
+    case 'WARDROBE': {
+      const modules = Math.max(1, Math.ceil(L / 100));
+      return { L, W, H, modules, upperH: 0, doors: modules * 2, drawers: modules, cabinetRun: L, fridge: false, fullHeight: true };
+    }
+    default:
+      return { L, W, H, modules: 2, upperH: 0, doors: 2, drawers: 2, cabinetRun: L, fridge: false, fullHeight: false };
+  }
+}
+
+function builtInCabinetry(spec: Extract<Specifications, { category: 'FURNITURE' }>, add: Add) {
+  const { L, W, H, modules, upperH, drawers, cabinetRun, fridge, fullHeight } = builtInLayout(spec);
+  switch (spec.construction_type) {
+    case 'KITCHEN_SET': {
+      // cabinet runs over the aggregated length (both walls of an L, minus the corner overlap and the fridge bay)
+      const run = cabinetRun;
+      const m = run / modules;
+      add('Base cabinet side / divider panel', modules + 1, dim(KITCHEN.base, W));
+      add('Base cabinet bottom', 1, dim(run, W));
+      add('Base cabinet shelf', modules, dim(m - 2, W - 5));
+      add('Base cabinet door', modules - Math.ceil(modules / 2), dim(m, 72));
+      add('Drawer front & box', drawers, dim(m, 24));
+      add('Kick plinth', 1, dim(run, 10));
+      add(`Wall cabinet side / divider panel${fullHeight ? ' (full height to ceiling)' : ''}`, modules + 1, dim(upperH, 35));
+      add('Wall cabinet top & bottom', 2, dim(run, 35));
+      add(`Wall cabinet door${fullHeight ? ' (full height to ceiling)' : ''}`, modules, dim(m, upperH));
+      add('Back panel (plywood 9mm)', 2, dim(run, Math.max(KITCHEN.base, upperH)));
+      if (spec.attributes.layout_shape === 'L_SHAPE' || spec.attributes.layout_shape === 'U_SHAPE') {
+        add('Corner base unit blind panel', spec.attributes.layout_shape === 'U_SHAPE' ? 2 : 1, dim(W, KITCHEN.base));
+      }
+      if (fridge) {
+        // tall enclosure around a built-in fridge: two full-height side panels + a bridge cabinet over the fridge
+        add('Tall cabinet enclosure panel (fridge)', 2, dim(H, W));
+        add('Top bridging panel (fridge bridge cabinet)', 2, dim(KITCHEN.fridgeBay - 4, W));
+        if (H - 190 > 20) add('Bridge cabinet door', 1, dim(KITCHEN.fridgeBay - 4, H - 190));
+      } else if (/oven/i.test(spec.attributes.appliances)) add('Tall unit side panel (oven)', 2, dim(H, W));
+      break;
+    }
+    case 'WARDROBE': {
+      const m = L / modules;
+      add('Side & divider panel', modules + 1, dim(H, W));
+      add('Top & bottom board', 2, dim(L, W));
+      add('Shelf board', modules * 4, dim(m - 2, W - 5));
+      add('Door', modules * 2, dim(m / 2, H - 12));
+      add('Drawer front & box', drawers, dim(m - 4, 22));
+      add('Back panel (plywood 9mm)', 1, dim(L, H));
+      add('Plinth', 1, dim(L, 10));
+      break;
+    }
+    default: {
+      // TV console
+      add('Top board', 1, dim(L, W));
+      add('Bottom board', 1, dim(L, W));
+      add('Side & divider panel', 3, dim(H, W));
+      add('Drawer front & box', drawers, dim(L / 2 - 2, 18));
+      add('Flap door', 2, dim(L / 2 - 2, H - 22));
+      add('Back panel (plywood 9mm)', 1, dim(L, H));
+    }
+  }
+}
+
 function furniture(spec: Extract<Specifications, { category: 'FURNITURE' }>, add: Add) {
   const a = spec.attributes;
   const { length: L, width: W, height: H } = dimsOf(spec);
   const leg = 7;
   switch (spec.construction_type) {
+    case 'KITCHEN_SET':
+    case 'WARDROBE':
+    case 'TV_CONSOLE':
+      builtInCabinetry(spec, add);
+      return;
     case 'CHAIR':
     case 'STOOL':
       add('Seat panel', 1, dim(L, W));
@@ -248,13 +359,33 @@ export function defaultHardware(raw: Specifications): string[] {
     case 'FURNITURE': {
       const a = spec.attributes;
       const hw: string[] = [];
+      // add-ons are listed for production; their price comes from the custom field surcharge, not the hardware rate
+      const addOns = spec.custom_fields.filter((f) => f.kind === 'ADD_ON').map((f) => `${f.label}: ${f.value} (add-on)`);
+      if (isBuiltInFurniture(spec.construction_type)) {
+        const { L, W, H, doors, drawers, cabinetRun } = builtInLayout(spec);
+        const grade = a.hardware_fittings === 'PREMIUM_SOFT_CLOSE' ? 'Blum / Hafele soft-close' : a.hardware_fittings === 'SOFT_CLOSE' ? 'Soft-close' : 'Standard';
+        hw.push(`${grade} concealed hinges x${doors * 2}`, `${grade} drawer rails (pair) x${drawers}`, `Handles x${doors + drawers}`);
+        if (spec.construction_type === 'WARDROBE') hw.push('Hanging rail x2');
+        if (spec.construction_type === 'KITCHEN_SET') {
+          const top = a.countertop.trim() || 'Granite';
+          // countertop and backsplash follow the cabinet run (both walls of an L, without the fridge bay)
+          hw.push(
+            `${top} countertop ${Math.round(cabinetRun)} x ${Math.round(W)} cm`,
+            `Backsplash ${Math.round(cabinetRun)} x ${KITCHEN.splash} cm`,
+            'Adjustable cabinet legs x' + Math.max(4, Math.ceil(cabinetRun / 60) * 2),
+          );
+        }
+        // HPL covers the visible fronts and sides: front area + 20% over 122 x 244 cm sheets
+        if (a.finish_coating === 'HPL') hw.push(`HPL sheet 122 x 244 cm x${Math.max(1, Math.ceil((L * H * 1.2) / (122 * 244)))}`);
+        return [...hw, ...addOns];
+      }
       if (a.joinery_type === 'KNOCK_DOWN_FITTINGS' || a.assembly === 'KNOCK_DOWN') hw.push('Knock-down connector bolts x8');
       if (a.joinery_type === 'POCKET_SCREW') hw.push('Pocket screws x24');
       if (a.joinery_type === 'DOWEL') hw.push('Hardwood dowels x16');
       if (spec.construction_type === 'CABINET') hw.push('Concealed hinges x4', 'Door handles x2');
       if (spec.construction_type === 'DESK') hw.push('Drawer slides (pair)');
       hw.push('Felt floor pads x4');
-      return hw;
+      return [...hw, ...addOns];
     }
     case 'CUSTOM_GENERIC':
       return [];
@@ -289,8 +420,14 @@ export function estimateLaborHours(preset: CategoryPreset, components: BomCompon
       if (spec.attributes.welt_method === 'CEMENTED') hours *= 0.7;
       break;
     case 'FURNITURE':
-      if (spec.attributes.joinery_type === 'MORTISE_TENON' || spec.attributes.joinery_type === 'DOVETAIL') hours *= 1.2;
-      if (spec.attributes.joinery_type === 'WELDED') hours *= 0.8;
+      // sprayed duco needs several coats + sanding; melamic and HPL pressing sit in between
+      if (spec.attributes.finish_coating === 'DUCO_PAINT') hours *= 1.25;
+      if (spec.attributes.finish_coating === 'MELAMIC' || spec.attributes.finish_coating === 'HPL') hours *= 1.1;
+      // (joinery is a loose-furniture choice; built-ins carry the preset default but are board cabinetry)
+      if (!isBuiltInFurniture(spec.construction_type)) {
+        if (spec.attributes.joinery_type === 'MORTISE_TENON' || spec.attributes.joinery_type === 'DOVETAIL') hours *= 1.2;
+        if (spec.attributes.joinery_type === 'WELDED') hours *= 0.8;
+      }
       if (hasUpholstery(spec.attributes.upholstery)) hours += 4;
       break;
     case 'CUSTOM_GENERIC':

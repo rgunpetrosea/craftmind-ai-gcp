@@ -275,7 +275,9 @@ export function mergeCustomFields(existing: CustomField[], incoming: Array<{ lab
 export type LooseTopic = LooseSchema['topics'][number];
 
 export function topicsFor(spec: Specifications): LooseTopic[] {
-  return schemaOf(spec.category).topics.filter((t) => !t.applies_to || t.applies_to.includes(spec.construction_type));
+  return schemaOf(spec.category).topics.filter(
+    (t) => (!t.applies_to || t.applies_to.includes(spec.construction_type)) && !(t.excludes as string[] | undefined)?.includes(spec.construction_type),
+  );
 }
 
 export function isTopicFilled(spec: Specifications, topic: LooseTopic, progress?: Pick<IntakeProgress, 'deferred_topics'>): boolean {

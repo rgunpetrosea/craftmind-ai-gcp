@@ -1,8 +1,9 @@
 import { Type, type FunctionDeclaration } from '@google/genai';
 import { getStore } from '@/lib/gcp/firestore';
 import { currentAngles, finalSpecOf, renderMockupAngles, reusableRender } from '@/lib/mockups';
-import { angleChoices, angleDef, angleForRequest, angleFromId, anglesFromIds, defaultMockupAngles } from '@/lib/spec/angles';
-import { isClassified } from '@/lib/spec/catalog';
+import { angleChoices, angleDef, angleForRequest, angleFromId, anglesFromIds, defaultMockupAngles, MOCKUP_ANGLES } from '@/lib/spec/angles';
+import { isBuiltInFurniture } from '@/lib/spec/categories/furniture';
+import { isClassified, missingRequired } from '@/lib/spec/catalog';
 import { aiRenderCap, mockupCapMessage } from '@/lib/spec/guardrails';
 import type { CrafterProfile, IntakeProgress, MockupAngle, MockupRender, Specifications } from '@/lib/types';
 import { isAiBlocked } from '@/lib/utils/takeover';
@@ -37,6 +38,20 @@ export function mockupToolDeclaration(spec?: Specifications): FunctionDeclaratio
             'inside view ("posisi terbuka", "bagian dalam", "slot kartu", "interior"), pass the interior angle, never the closed ' +
             'exterior. Omit for the default set.',
         },
+        batch_job: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              angle: { type: Type.INTEGER, description: 'View id (see angles).' },
+              derived_from: { type: Type.INTEGER, description: 'Master view this one is derived from (1): same geometry, new camera / state.' },
+            },
+            required: ['angle'],
+          },
+          description:
+            'One-pass batch, preferred over `angles`: [{"angle": 1}, {"angle": 2, "derived_from": 1}, {"angle": 3, "derived_from": 1}]. ' +
+            'Angle 1 is the master shot; derived angles keep its exact geometry.',
+        },
         adjustment: {
           type: Type.STRING,
           description:
@@ -50,6 +65,8 @@ export function mockupToolDeclaration(spec?: Specifications): FunctionDeclaratio
 }
 
 export interface MockupToolArgs {
+  /** [{ angle: 1 }, { angle: 2, derived_from: 1 }, ...]: one-pass batch; derived angles keep the master's geometry. */
+  batch_job?: unknown;
   /** [1, 2, 3]: the slots rendered in this single call (batched, one render round). */
   angles?: unknown;
   /** 1..3, a single slot (older calls). */
@@ -66,13 +83,30 @@ export type MockupToolResult =
   | { status: 'FAILED' }
   | { status: 'SKIPPED_TAKEOVER' };
 
+/** Angles of a `batch_job` ([{ angle, derived_from }]) and whether any of them is derived from the master shot. */
+export function parseBatchJob(job: unknown): { angles: MockupAngle[]; derived: boolean } {
+  if (!Array.isArray(job)) return { angles: [], derived: false };
+  const items = job.filter((j): j is { angle?: unknown; derived_from?: unknown } => typeof j === 'object' && j !== null);
+  return { angles: anglesFromIds(items.map((j) => j.angle)), derived: items.some((j) => Number(j.derived_from) === 1) };
+}
+
+/** One-pass batch for a set of slots: ANGLE_1 is the master, the others are derived from it. */
+export function batchJobFor(angles: MockupAngle[]): Array<{ angle: number; derived_from?: number }> {
+  return angles.map((a) => {
+    const angle = MOCKUP_ANGLES.indexOf(a) + 1;
+    return angle === 1 ? { angle } : { angle, derived_from: 1 };
+  });
+}
+
 /**
- * Which slots this call renders: an explicit view in the client's words, else the batch in `angles`, else a single
- * `angle_id`, else the default set (wallets / bags: closed + open interior).
+ * Which slots this call renders: an explicit view in the client's words, else the `batch_job`, else the batch in
+ * `angles`, else a single `angle_id`, else the default set (wallets / bags: closed + open interior).
  */
 export function targetAngles(spec: Specifications, args: MockupToolArgs): MockupAngle[] {
   const asked = angleForRequest(args.requestText ?? '', spec.category, spec.construction_type);
   if (asked) return [asked];
+  const job = parseBatchJob(args.batch_job).angles;
+  if (job.length) return job;
   const batch = anglesFromIds(args.angles);
   if (batch.length) return batch;
   const single = angleFromId(args.angle_id);
@@ -95,6 +129,9 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
   const order = await store.getOrder(orderId);
   if (!order || isAiBlocked(order)) return { status: 'SKIPPED_TAKEOVER' };
   if (!isClassified(order.specifications)) return { status: 'NOT_READY' };
+  // Required spec gate (every caller checks it too): no image while a mandatory slot (built-ins: board core, finishing,
+  // hinges & rails, top table) is still empty; the conversation asks for it instead.
+  if (missingRequired(order.specifications, order.intake).length) return { status: 'NOT_READY' };
 
   const spec = order.specifications;
   const targets = targetAngles(spec, args);
@@ -104,7 +141,17 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
   const adjusted = !adjustment ? [] : focus && targets.includes(focus) ? [focus] : targets;
   const finalSpec = await finalSpecOf(order);
   const current = new Map(currentAngles(order).map((r) => [r.angle, r]));
-  const reused = targets.filter((a) => !adjusted.includes(a) && reusableRender(order, a, finalSpec));
+  let reused = targets.filter((a) => !adjusted.includes(a) && reusableRender(order, a, finalSpec));
+  // Geometry lock (built-in interiors, or a batch with derived angles): every derived angle is built on the current master
+  // shot. A stale master is rendered first in the same call; when the master changes, its derived angles change with it.
+  const geometryLocked = (spec.category === 'FURNITURE' && isBuiltInFurniture(spec.construction_type)) || parseBatchJob(args.batch_job).derived;
+  if (geometryLocked && targets.some((a) => !reused.includes(a))) {
+    const masterCurrent = reused.includes('ANGLE_1') || (!targets.includes('ANGLE_1') && reusableRender(order, 'ANGLE_1', finalSpec));
+    if (!masterCurrent) {
+      if (!targets.includes('ANGLE_1')) targets.unshift('ANGLE_1');
+      reused = [];
+    }
+  }
   const toGenerate = targets.filter((a) => !reused.includes(a));
 
   const used = order.intake?.mockup_render_count ?? 0;

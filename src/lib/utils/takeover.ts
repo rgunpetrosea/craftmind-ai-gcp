@@ -23,7 +23,8 @@ const CRAFTER_NAMES = (process.env.CRAFTER_NAMES ?? 'fendy')
 // Leading word boundary only, so Indonesian suffixes still match ("adminnya", "pemiliknya").
 const KEYWORD_PATTERN = new RegExp(`\\b(${ESCALATION_KEYWORDS.join('|')})`, 'i');
 // "ngomong sama ...", "bicara langsung", "mau telepon", "hubungi ..." : asking for a person, however they phrase it.
-const HUMAN_INTENT_PATTERN = /\b(ngomong|bicara|berbicara|ngobrol|chat|telepon|telpon|hubungi|kontak)\s+(sama|dengan|langsung|ke|dgn|sm)\b/i;
+// ("stop kontak dengan USB" is a power socket, not a request for a person)
+const HUMAN_INTENT_PATTERN = /\b(ngomong|bicara|berbicara|ngobrol|chat|telepon|telpon|hubungi|(?<!stop\s?)kontak)\s+(sama|dengan|langsung|ke|dgn|sm)\b/i;
 const NAME_PATTERN = CRAFTER_NAMES.length ? new RegExp(`\\b(?:mas|pak|bu|mbak|kak)\\s+(${CRAFTER_NAMES.join('|')})\\b`, 'i') : null;
 
 /**
@@ -47,6 +48,8 @@ export const HANDOFF_MESSAGES: Record<EscalationReason | 'NON_STANDARD', string>
   CRAFTER_OVERRIDE: '',
   /** Profile-specific texts for these two come from spec/guardrails.ts (sessionCapMessage / loopHandoverMessage). */
   SESSION_LIMIT: '',
+  /** Discount far below the floor price: text from spec/guardrails.ts (negotiationHandoverMessage). */
+  PRICE_NEGOTIATION: '',
   /** Non-standard request (escalated with reason CLIENT_REQUEST). */
   NON_STANDARD: 'Untuk permintaan ini perlu dicek langsung oleh {{active_crafter_name}} ya kak. Kami teruskan sekarang, mohon ditunggu sebentar.',
 };

@@ -205,11 +205,56 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     id: 'finishing_wood',
     term: 'Finishing kayu',
-    match: /natural oil|danish oil|pu varnish|melamin|duco|politur|finishing kayu/i,
+    match: /natural oil|danish oil|pu varnish|politur|finishing kayu/i,
     categories: ['FURNITURE'],
     topic: 'finish',
     explanation:
-      'Natural oil = minyak meresap ke serat, tampilan alami dan doff, perlu dirawat ulang berkala. PU/melamin = lapisan pernis yang keras dan tahan air/goresan. Duco = cat tertutup (warna solid, serat kayu tidak terlihat).',
+      'Natural oil = minyak meresap ke serat, tampilan alami dan doff, perlu dirawat ulang berkala. PU = lapisan pernis yang keras dan tahan air/goresan. Duco = cat tertutup (warna solid, serat kayu tidak terlihat).',
+  },
+  {
+    id: 'hpl',
+    term: 'HPL',
+    match: /\bhpl\b|high[\s-]?pressure laminat/i,
+    categories: ['FURNITURE'],
+    topic: 'board_finish',
+    explanation:
+      'HPL (high pressure laminate) = lembaran lapisan tipis yang dipres ke permukaan kabinet. Pilihan motif kayu, marmer atau warna solid; tahan gores dan mudah dibersihkan. Paling umum untuk kitchen set dan lemari built-in.',
+  },
+  {
+    id: 'duco_melamic',
+    term: 'Duco / melamic',
+    match: /duco|melamic|melamin/i,
+    categories: ['FURNITURE'],
+    topic: 'board_finish',
+    explanation:
+      'Duco = cat semprot berlapis yang hasilnya mulus tanpa serat, warnanya bebas (doff atau glossy); lebih mahal dan perlu perawatan dari benturan. Melamic = pernis bening, serat kayu aslinya tetap terlihat; cocok kalau permukaannya veneer atau kayu.',
+  },
+  {
+    id: 'board_core',
+    term: 'Plywood vs blockboard',
+    match: /plywood|multiplek\w*|block ?board|\bmdf\b/i,
+    categories: ['FURNITURE'],
+    topic: 'material',
+    explanation:
+      'Plywood (multipleks) = lembaran kayu tipis berlapis-lapis, kuat menahan sekrup dan lebih tahan lembap; cocok untuk kitchen set. Blockboard = inti potongan kayu yang dilapis, lebih ringan dan ekonomis, pas untuk lemari dan rak di area kering. MDF = serbuk kayu dipres, permukaan halus untuk duco tapi tidak tahan air.',
+  },
+  {
+    id: 'soft_close',
+    term: 'Soft-close',
+    match: /soft[\s-]?clos\w*|slow ?motion|engsel hidrolik/i,
+    categories: ['FURNITURE'],
+    topic: 'hardware',
+    explanation:
+      'Soft-close = engsel pintu dan rel laci dengan peredam, jadi menutup pelan sendiri tanpa bunyi banting. Lebih awet untuk pemakaian harian; merek premium seperti Blum atau Hafele paling halus dan tahan lama.',
+  },
+  {
+    id: 'countertop',
+    term: 'Top table',
+    match: /top ?table|solid ?surface|granit|marmer|sintered/i,
+    categories: ['FURNITURE'],
+    topic: 'countertop',
+    explanation:
+      'Top table = meja atas kitchen set. Granit paling tahan panas dan gores; marmer lebih mewah tapi mudah bernoda; solid surface mulus tanpa sambungan dan bisa dibentuk, tapi kurang tahan panas langsung.',
   },
 ];
 

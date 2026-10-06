@@ -19,6 +19,8 @@ const TYPE_SYNONYMS: Array<[string, RegExp]> = [
   ['walnut', /walnut/i],
   ['suar', /trembesi|suar|monkey ?pod/i],
   ['iron', /besi|iron|hollow/i],
+  ['plywood', /plywood|multiplek\w*|triplek/i],
+  ['blockboard', /block ?board/i],
 ];
 
 const COLOR_SYNONYMS: Array<[string, RegExp]> = [
@@ -63,7 +65,7 @@ function thicknessOf(text: string): number | undefined {
 }
 
 const LEATHER_TYPES = new Set(['veg-tan', 'chrome-tan', 'epsom', 'pull-up', 'crazy horse', 'nappa', 'saffiano']);
-const WOOD_METAL_TYPES = new Set(['teak', 'mahogany', 'walnut', 'suar', 'iron']);
+const WOOD_METAL_TYPES = new Set(['teak', 'mahogany', 'walnut', 'suar', 'iron', 'plywood', 'blockboard']);
 
 /** True when the material text names no specific type we stock ("Kulit", "Cokelat tua", "Dark Brown leather", "kayu"). */
 export function isGenericMaterial(material: string): boolean {

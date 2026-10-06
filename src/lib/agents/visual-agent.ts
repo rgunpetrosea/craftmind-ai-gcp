@@ -10,7 +10,8 @@ import {
 import { storeMedia } from '@/lib/gcp/gcs';
 import { compressRender } from '@/lib/utils/image';
 import { constructionDef, describeFields, schemaOf } from '@/lib/spec/catalog';
-import { angleDef, customView, type AngleView, type ViewScope } from '@/lib/spec/angles';
+import { angleDef, builtInRoom, customView, type AngleView, type ViewScope } from '@/lib/spec/angles';
+import { ceilingHeightCm, isBuiltInFurniture, isFullHeightBuiltIn } from '@/lib/spec/categories/furniture';
 import type { ConstructionType, CraftCategory, MockupAngle, MockupEngine, Specifications } from '@/lib/types';
 import { renderConceptSvg } from '@/lib/utils/svg';
 
@@ -33,7 +34,124 @@ const SHAPE_HINT: Partial<Record<ConstructionType, string>> = {
   TRIFOLD_WALLET: 'a trifold wallet (folds twice into three panels)',
   ACCORDION_WALLET: 'an accordion wallet with a pleated expanding gusset',
   ZIP_AROUND_LONG_WALLET: 'a long zip-around wallet, zipper running around three sides',
+  KITCHEN_SET: 'a custom built-in kitchen set (base cabinets under a countertop, wall-mounted upper cabinets)',
+  WARDROBE: 'a custom built-in wardrobe fitted wall to wall',
+  TV_CONSOLE: 'a custom built-in TV console / media wall',
 };
+
+/** Built-in cabinetry is photographed like architecture, not like a catalogue product. */
+const BUILT_IN_SCENE =
+  'realistic architectural interior photograph, eye-level human perspective, realistic architectural lighting (daylight from a window plus warm ceiling downlights), true-to-life materials and scale, straight verticals, no isometric, cutaway or aerial view';
+
+/**
+ * MASTER LAYOUT of built-in cabinetry: one deterministic description of the room (layout shape, wall runs, window, tall
+ * unit, sink, hob, ceiling) written into EVERY angle's prompt, so the Perspective Master Shot (ANGLE_1) and the angles
+ * derived from it show the same geometry. The client's own positions (`layout_notes`) win over the defaults.
+ */
+export function builtInLayoutPlan(spec: Specifications): string | undefined {
+  if (spec.category !== 'FURNITURE' || !builtInRoom(spec.construction_type)) return undefined;
+  const a = spec.attributes;
+  const { length: L1, height: H } = a.dimensions_cm;
+  const notes = a.layout_notes.trim();
+  const said = (re: RegExp) => re.test(notes);
+  const words = `${a.appliances} ${notes}`;
+  const fridge = /kulkas|lemari es|refrigerator|fridge/i.test(words);
+  const len = (n: number, fallback: string) => (n > 0 ? `${n} cm` : fallback);
+  const parts: string[] = [];
+  switch (spec.construction_type) {
+    case 'KITCHEN_SET': {
+      const L2 = a.second_wall_cm;
+      parts.push(
+        a.layout_shape === 'L_SHAPE'
+          ? `L-shaped kitchen: main run ${len(L1, 'about 300 cm')} along the back wall and a return run ${len(L2, 'about 200 cm')} along the left wall, meeting in the left corner`
+          : a.layout_shape === 'U_SHAPE'
+            ? `U-shaped kitchen: main run ${len(L1, 'about 300 cm')} on the back wall with ${len(L2, 'about 200 cm')} runs on both the left and right walls`
+            : a.layout_shape === 'GALLEY'
+              ? `parallel galley kitchen: a ${len(L1, 'about 300 cm')} run on the left wall facing a ${len(L2, 'about 300 cm')} run on the right wall`
+              : `straight kitchen: a single ${len(L1, 'about 300 cm')} run along the back wall`,
+      );
+      if (!said(/jendela|window/i)) parts.push('one window on the back wall near the left corner, above the countertop');
+      if (fridge && !said(/kulkas|lemari es|refrigerator|fridge/i)) parts.push('tall refrigerator cabinet at the right end of the main run');
+      if (!said(/wastafel|bak cuci|sink/i)) parts.push('sink under the window');
+      if (!said(/kompor|hob/i)) parts.push(a.layout_shape === 'L_SHAPE' || a.layout_shape === 'U_SHAPE' ? 'hob on the return run' : 'hob to the right of the sink');
+      parts.push(isFullHeightBuiltIn(spec) ? `wall cabinets run up to the ceiling (${ceilingHeightCm(spec)} cm), flush, no gap` : 'wall cabinets 80 cm high above a 60 cm splashback');
+      break;
+    }
+    case 'WARDROBE':
+      parts.push(`built-in wardrobe on one wall, ${len(L1, 'about 180 cm')} wide and ${len(H, 'about 240 cm')} high, fitted wall to wall${isFullHeightBuiltIn(spec) ? ' and up to the ceiling' : ''}`);
+      break;
+    default:
+      parts.push(`media wall on the main wall: a ${len(L1, 'about 200 cm')} low console centred under the TV${isFullHeightBuiltIn(spec) ? ', side shelving up to the ceiling' : ''}`);
+  }
+  return `${parts.join('; ')}.${notes ? ` Client positions (authoritative): "${notes}".` : ''}`;
+}
+
+/**
+ * Spatial rules for built-in interiors, from the spec (fields, notes, custom requests): floor-to-ceiling cabinetry,
+ * the appliances it houses (a 2-door fridge becomes a side-by-side double door refrigerator in the tall unit), realistic
+ * kitchen proportions and an eye-level indoor viewpoint. Macro shots only get the finish, not the room.
+ */
+export function interiorSpatialRules(spec: Specifications, scope: ViewScope): string[] {
+  const room = spec.category === 'FURNITURE' ? builtInRoom(spec.construction_type) : undefined;
+  if (!room || scope === 'DETAIL') return [];
+  const rules: string[] = [];
+  if (spec.construction_type === 'KITCHEN_SET') {
+    rules.push(
+      `realistic kitchen proportions: base cabinets 85 cm high and 60 cm deep on a recessed plinth, about 60 cm of splashback above the countertop${isFullHeightBuiltIn(spec) ? ', wall cabinets from there all the way up to the ceiling' : ''}`,
+    );
+  }
+  rules.push(`realistic indoor perspective: eye-level human viewpoint inside the ${room}, realistic architectural lighting`);
+  return rules;
+}
+
+/** Bump when the built-in prompt changes in a way that should not reuse earlier renders of the same spec. */
+const BUILT_IN_PROMPT_VERSION = 2;
+
+/**
+ * HARD CONSTRAINTS of a built-in render, read from the spec every time the tool runs (so a parameter extracted late,
+ * e.g. "Sampai plafon: Ya", "kulkas 2 pintu", the L2 run, is never left out): ceiling-hung cabinetry, the appliances it
+ * houses and the wall runs. They head the prompt, override any reference image and are checked again at the end.
+ * Macro shots get none (they show a detail, not the room).
+ */
+export function builtInHardConstraints(spec: Specifications, scope: ViewScope): string[] {
+  if (spec.category !== 'FURNITURE' || !isBuiltInFurniture(spec.construction_type) || scope === 'DETAIL') return [];
+  const a = spec.attributes;
+  const words = [a.appliances, a.layout_notes, spec.model_name, spec.notes, ...spec.custom_fields.map((f) => `${f.label} ${f.value}`)].join(' ');
+  const out: string[] = [];
+  if (isFullHeightBuiltIn(spec)) {
+    const ceiling = `${(ceilingHeightCm(spec) / 100).toFixed(1)}m height`;
+    out.push(
+      spec.construction_type === 'KITCHEN_SET'
+        ? `wall cabinets extending fully to the ceiling line (${ceiling}), zero gap above cabinets, flush to ceiling; no open space, bulkhead or shelf above the cabinet tops`
+        : spec.construction_type === 'WARDROBE'
+          ? `wardrobe extending fully to the ceiling line (${ceiling}), zero gap above, flush to ceiling`
+          : `side cabinets and shelving extending fully to the ceiling line (${ceiling}), zero gap above, flush to ceiling`,
+    );
+  }
+  if (spec.construction_type === 'KITCHEN_SET' && a.second_wall_cm > 0 && (a.layout_shape === 'L_SHAPE' || a.layout_shape === 'U_SHAPE' || a.layout_shape === 'GALLEY')) {
+    const L1 = a.dimensions_cm.length;
+    out.push(
+      a.layout_shape === 'L_SHAPE'
+        ? `L-shaped layout: ${L1} cm main run plus a ${a.second_wall_cm} cm return run meeting in a corner`
+        : a.layout_shape === 'U_SHAPE'
+          ? `U-shaped layout: ${L1} cm main run with ${a.second_wall_cm} cm runs on both side walls`
+          : `parallel layout: ${L1} cm run facing a ${a.second_wall_cm} cm run`,
+    );
+  }
+  if (/kulkas|lemari es|refrigerator|fridge/i.test(words)) {
+    out.push(
+      /\b(1|satu|single)\s*(pintu|door)\b/i.test(words)
+        ? 'includes a modern stainless steel single door refrigerator fitted inside the tall cabinet enclosure'
+        : 'includes a modern stainless steel side-by-side double door refrigerator fitted inside the tall cabinet enclosure',
+    );
+  }
+  if (/kompor|\bhob\b/i.test(words)) out.push('built-in hob set into the countertop with a slim cooker hood above it');
+  if (/\boven\b/i.test(words)) out.push('built-in oven housed in the tall unit at chest height');
+  if (/microwave/i.test(words)) out.push('built-in microwave in the tall unit');
+  if (/wastafel|bak cuci|\bsink\b/i.test(words)) out.push('undermount stainless steel sink with a modern faucet in the countertop');
+  if (spec.construction_type === 'TV_CONSOLE' || /\btv\b/i.test(words)) out.push('a wall-mounted flat-screen TV centred above the console');
+  return out;
+}
 
 const SCENE: Record<CraftCategory, string> = {
   SMALL_GOODS: 'soft-box lighting, warm neutral seamless backdrop, 85mm macro lens',
@@ -59,6 +177,9 @@ export interface MockupFrame {
  * long wallet is landscape and keeps the default. Everything else stays 1:1.
  */
 export function mockupFrame(spec: Specifications, scope: ViewScope = 'EXTERIOR'): MockupFrame {
+  // built-in interiors: a landscape room view for kitchens / media walls, portrait for a wardrobe; macro stays square
+  const room = spec.category === 'FURNITURE' ? builtInRoom(spec.construction_type) : undefined;
+  if (room) return scope === 'DETAIL' ? { aspect: '1:1' } : { aspect: spec.construction_type === 'WARDROBE' ? '3:4' : '3:2' };
   if (spec.category !== 'SMALL_GOODS' || spec.construction_type === 'ZIP_AROUND_LONG_WALLET') return { aspect: '1:1' };
   const d = (spec.attributes as { dimensions_cm?: { length: number; height: number } }).dimensions_cm;
   const words = [spec.model_name, spec.notes, spec.reference_object, ...spec.custom_fields.map((f) => `${f.label} ${f.value}`)].join(' ');
@@ -117,7 +238,17 @@ export function mockupSignature(spec: Specifications, angle: MockupAngle = 'ANGL
   const view = customPrompt ? customView(spec.category, angle, spec.construction_type) : angleDef(spec.category, angle, spec.construction_type);
   const { aspect } = mockupFrame(spec, view.scope);
   // the frame only joins the signature when it isn't the square default, so existing square renders stay reusable
-  return JSON.stringify({ c: spec.construction_type, a: angle, view: view.view, v: visualSpec(spec, view.scope), p: customPrompt ?? '', ...(aspect !== '1:1' && { f: aspect }) });
+  const builtIn = spec.category === 'FURNITURE' && isBuiltInFurniture(spec.construction_type);
+  return JSON.stringify({
+    c: spec.construction_type,
+    a: angle,
+    view: view.view,
+    v: visualSpec(spec, view.scope),
+    p: customPrompt ?? '',
+    ...(aspect !== '1:1' && { f: aspect }),
+    // built-ins: the hard constraints and the prompt version are part of what the render shows
+    ...(builtIn && { h: builtInHardConstraints(spec, view.scope), pv: BUILT_IN_PROMPT_VERSION }),
+  });
 }
 
 export function buildMockupPrompt(spec: Specifications, hardware: string[], view: AngleView, customShot?: string): string {
@@ -125,13 +256,23 @@ export function buildMockupPrompt(spec: Specifications, hardware: string[], view
   const label = constructionDef(spec.construction_type)?.label ?? schema.noun;
   const subject = SHAPE_HINT[spec.construction_type] ?? `a handcrafted ${label.toLowerCase()} (${schema.noun})`;
   const frame = mockupFrame(spec, view.scope);
+  const room = spec.category === 'FURNITURE' ? builtInRoom(spec.construction_type) : undefined;
+  const spatial = interiorSpatialRules(spec, view.scope);
+  const layout = builtInLayoutPlan(spec);
+  const hard = builtInHardConstraints(spec, view.scope);
   return [
-    `Studio product photograph of ${subject}.`,
+    room ? `Photograph of ${subject} installed in a ${room}.` : `Studio product photograph of ${subject}.`,
+    hard.length
+      ? `HARD CONSTRAINTS (from the spec card; must be visible; they override any default cabinet template and any attached reference image): ${hard.map((h, i) => `${i + 1}) ${h}`).join('; ')}.`
+      : '',
     `PRODUCT SPEC (JSON): ${JSON.stringify(visualSpec(spec, view.scope, hardware))}`,
+    layout ? `MASTER LAYOUT (geometry lock, identical in every angle): ${layout}` : '',
     `CAMERA / SHOT: ${customShot?.trim() || view.shot}`,
+    spatial.length ? `SPATIAL RULES: ${spatial.join('; ')}.` : '',
     frame.framing ? `FRAMING: ${frame.framing}` : '',
     view.isolation ? `STRICT RULE: ${view.isolation}` : '',
-    `STYLE: ${SCENE[spec.category]}, photorealistic, no text, no logo watermark.`,
+    `STYLE: ${room ? BUILT_IN_SCENE : SCENE[spec.category]}, photorealistic, no text, no logo watermark.`,
+    hard.length ? `CHECK BEFORE FINISHING: every HARD CONSTRAINT above is visible in the image${isFullHeightBuiltIn(spec) ? ' (no gap between the cabinet tops and the ceiling)' : ''}.` : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -193,12 +334,19 @@ export async function runVisualAgent(input: {
   ]);
   const references = [sketch, consistency, previous].filter((p): p is NonNullable<typeof p> => Boolean(p));
 
+  const geometryLock = input.spec.category === 'FURNITURE' && Boolean(builtInRoom(input.spec.construction_type));
+  const hasHardConstraints = builtInHardConstraints(input.spec, view.scope).length > 0;
   const instructions = [
     consistency &&
-      'The attached studio photo shows THIS EXACT product: keep identical material, colour, hardware and proportions; change only the camera / shot as described' +
-        (view.scope === 'EXTERIOR' ? ' and keep it closed' : '') + '.',
+      (geometryLock
+        ? 'GEOMETRY LOCK: the attached image is the Perspective Master Shot (Angle 1). Render the SAME EXACT room derived from it: identical wall layout, window positions, cabinet runs and module divisions, tall unit and appliance positions, materials and colours; change only what CAMERA / SHOT says.'
+        : 'The attached studio photo shows THIS EXACT product: keep identical material, colour, hardware and proportions; change only the camera / shot as described' +
+          (view.scope === 'EXTERIOR' ? ' and keep it closed' : '') + '.'),
     previous && "Edit the attached previous render of this angle according to the crafter's feedback while keeping the product recognisable.",
     sketch && 'Turn the attached rough client sketch into a finished product render.',
+    hasHardConstraints &&
+      references.length &&
+      'Where an attached image contradicts a HARD CONSTRAINT (for example standard-height wall cabinets with a gap below the ceiling), follow the HARD CONSTRAINT, not the image.',
   ].filter(Boolean);
   const geminiPrompt = `${instructions.join(' ')}\n${prompt}`.trim();
 

@@ -8,8 +8,10 @@ export interface QuotationBreakdown {
   labor_idr: number;
   sourcing_idr: number;
   personalization_idr: number;
-  /** Sum of crafter-assigned surcharges on custom fields. */
+  /** Sum of positive surcharges on custom fields (custom requests, add-ons). */
   custom_requests_idr: number;
+  /** Discounts / freebies (negative custom-field surcharges), taken off after the margin. */
+  discount_idr: number;
   /** On-site measurement when the size is PENDING_SITE_VISIT. */
   site_visit_idr: number;
   subtotal_idr: number;
@@ -31,9 +33,9 @@ function personalizationFee(spec?: Specifications): number {
   return type ? PERSONALIZATION_FEE_IDR[type] : 0;
 }
 
-/** Hardware lines may carry a quantity suffix such as "Brass rivets x4". */
+/** Hardware lines may carry a quantity suffix such as "Brass rivets x4". Add-ons are priced as custom fields instead. */
 function hardwareUnits(list: string[]): number {
-  return list.reduce((sum, item) => sum + Number(/x\s*(\d+)\s*$/i.exec(item)?.[1] ?? 1), 0);
+  return list.filter((item) => !/\(add-on\)/i.test(item)).reduce((sum, item) => sum + Number(/x\s*(\d+)\s*$/i.exec(item)?.[1] ?? 1), 0);
 }
 
 export function computeQuotation(
@@ -48,13 +50,15 @@ export function computeQuotation(
   const labor_idr = Math.round(bom.estimated_labor_hours * preset.labor_rate_idr_per_hour);
   const sourcing_idr = sourcing.sourcing_fee_idr;
   const personalization_idr = personalizationFee(spec);
-  const custom_requests_idr = (spec?.custom_fields ?? []).reduce((s, f) => s + (Number(f.surcharge_idr) || 0), 0);
+  const surcharges = (spec?.custom_fields ?? []).map((f) => Number(f.surcharge_idr) || 0);
+  const custom_requests_idr = surcharges.filter((v) => v > 0).reduce((s, v) => s + v, 0);
+  const discount_idr = -surcharges.filter((v) => v < 0).reduce((s, v) => s + v, 0);
   const site_visit_idr = spec?.dimension_mode === 'PENDING_SITE_VISIT' ? (preset.site_visit_fee_idr ?? 0) : 0;
   const subtotal_idr = material_idr + hardware_idr + labor_idr + sourcing_idr + personalization_idr + custom_requests_idr + site_visit_idr;
   const margin_idr = Math.round(subtotal_idr * preset.margin_pct);
   // Round up to the nearest Rp 10.000 for a clean client-facing number.
-  const total_idr = Math.ceil((subtotal_idr + margin_idr) / 10_000) * 10_000;
-  return { material_idr, hardware_idr, labor_idr, sourcing_idr, personalization_idr, custom_requests_idr, site_visit_idr, subtotal_idr, margin_idr, total_idr };
+  const total_idr = Math.max(0, Math.ceil((subtotal_idr + margin_idr - discount_idr) / 10_000) * 10_000);
+  return { material_idr, hardware_idr, labor_idr, sourcing_idr, personalization_idr, custom_requests_idr, discount_idr, site_visit_idr, subtotal_idr, margin_idr, total_idr };
 }
 
 /** Pattern draft → stock match → priced BOM, as stored on the order. */
