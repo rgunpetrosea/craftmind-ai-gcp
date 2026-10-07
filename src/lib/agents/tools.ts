@@ -120,7 +120,7 @@ export function targetAngles(spec: Specifications, args: MockupToolArgs): Mockup
  *
  * Quota: an angle whose existing render still shows the current spec (same signature) and is not the target of a free-text
  * adjustment is re-sent as is, without an image call. The per-session AI render counter (`mockup_render_count`, max
- * `aiRenderCap()`: 3 with a macro shot, else 2) goes up by ONE per call, however many angles the batch renders, and only when a real
+ * `aiRenderCap()`: 6 by default, initial renders and feedback re-renders alike) goes up by ONE per call, however many angles the batch renders, and only when a real
  * image (not the offline concept) was generated for a requested angle. Over the cap no image API is called and the
  * client gets the crafter hand-off message (once). A render failure gets a short apology and the crafter is notified.
  */

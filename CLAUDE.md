@@ -252,12 +252,12 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 - Counters live in `OrderPayload.intake` (per intake session): `session_turn_count` (AI replies), `mockup_render_count`
   (AI render rounds), `silent_parse_count`. Limits are env-configurable in `src/lib/spec/guardrails.ts`.
 - Turn budget (checked BEFORE any Gemini call): every AI reply goes through `say()` in the orchestrator. At turn
-  `SESSION_TURN_WARNING` (8) an incomplete intake gets `turnWarningMessage` + crafter notification; at turn
-  `SESSION_TURN_CAP` (10) the AI sends `sessionCapMessage`, switches to FULL_MANUAL (`SESSION_LIMIT`) and notifies the crafter.
+  `SESSION_TURN_WARNING` (18) an incomplete intake gets `turnWarningMessage` + crafter notification; at turn
+  `SESSION_TURN_CAP` (20) the AI sends `sessionCapMessage`, switches to FULL_MANUAL (`SESSION_LIMIT`) and notifies the crafter.
   "Resume AI" on the dashboard resets the turn count.
 - AI mockups: at most `aiRenderCap(spec)` render rounds per session that actually generated an image (unchanged angles
-  are re-sent for free, see v14): `MAX_AI_MOCKUP_RENDERS_DETAIL` (3) for products with a detail macro slot (wallets,
-  footwear, furniture, custom), `MAX_AI_MOCKUP_RENDERS` (2) otherwise (bags). The dashboard badge shows the order's cap. Beyond that no image API call; the reply carries `mockupCapMessage`. Crafter dashboard
+  are re-sent for free, see v14): `MAX_AI_MOCKUP_RENDERS_DETAIL` (6) for products with a detail macro slot (wallets,
+  footwear, furniture, custom), `MAX_AI_MOCKUP_RENDERS` (6) otherwise (bags); initial renders and feedback re-renders share it. The dashboard badge shows the order's cap. Beyond that no image API call; the reply carries `mockupCapMessage`. Crafter dashboard
   renders are capped per order by `MAX_CRAFTER_RENDERS_PER_ORDER` (429).
 - Loop detector (reason CONFUSION_RULE): evaluated once per DEBOUNCED turn on the combined burst (+1 per turn, never per
   raw message). Design context resets the counter to 0: feedback / corrections ("salah", "revisi", "maksudnya ..."), a
@@ -311,7 +311,7 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   the closed exterior + the open interior, ANGLE_2 for wallets / ANGLE_3 for bags; others: ANGLE_1). `VISUAL_REQUEST`
   also matches view requests.
 - Quota: an angle whose render signature still matches and gets no `adjustment` is re-sent without an image call
-  (`reusableRender()`; an offline concept left by a failed call is retried). `mockup_render_count` (the "AI renders X/2"
+  (`reusableRender()`; an offline concept left by a failed call is retried). `mockup_render_count` (the "AI renders X/6"
   badge) goes up by ONE per tool call, and only when a real image (not offline-svg) was generated for a requested angle.
   Over the cap, reusable angles are still sent, nothing is generated, and `mockupCapMessage` follows.
 - Background angle renders skip angles whose render is still current.

@@ -98,7 +98,7 @@ function ProfileForm({ initial }: { initial: CrafterProfile }) {
             ['First message', greetingBubble(profile)],
             ['', PRODUCT_QUESTION],
             ['Off-topic / prompt injection', refusalMessage(profile)],
-            ['AI render limit reached (2 rounds, 3 with a macro shot)', mockupCapMessage(profile)],
+            ['AI render limit reached (6 rounds per session)', mockupCapMessage(profile)],
             ['AI turn budget used up', sessionCapMessage(profile)],
             ...(firstNotAllowed ? [[`Asks for ${firstNotAllowed.label_id}`, mismatchMessage(profile, firstNotAllowed.label_id)]] : []),
           ].map(([label, text], i) => (

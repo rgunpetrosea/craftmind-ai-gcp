@@ -54,13 +54,13 @@ export function mismatchMessage(profile: CrafterProfile, requestedItem: string):
 // ---------------------------------------------------------------------------
 
 /** The AI's Nth reply at which it hands the chat to the crafter instead of answering (hard cap). */
-export const SESSION_TURN_CAP = Number(process.env.SESSION_TURN_CAP ?? 10);
+export const SESSION_TURN_CAP = Number(process.env.SESSION_TURN_CAP ?? 20);
 /** The AI's Nth reply at which, if the intake is still incomplete, it offers to bring the crafter in. */
-export const SESSION_TURN_WARNING = Number(process.env.SESSION_TURN_WARNING ?? 8);
+export const SESSION_TURN_WARNING = Number(process.env.SESSION_TURN_WARNING ?? 18);
 /** AI mockup render rounds per intake session (spec lock + revisions). Crafter re-renders are capped separately. */
-export const MAX_AI_MOCKUP_RENDERS = Number(process.env.MAX_AI_MOCKUP_RENDERS ?? 2);
+export const MAX_AI_MOCKUP_RENDERS = Number(process.env.MAX_AI_MOCKUP_RENDERS ?? 6);
 /** The same budget for products that also get a detail macro shot (wallets, footwear, furniture, custom items). */
-export const MAX_AI_MOCKUP_RENDERS_DETAIL = Number(process.env.MAX_AI_MOCKUP_RENDERS_DETAIL ?? 3);
+export const MAX_AI_MOCKUP_RENDERS_DETAIL = Number(process.env.MAX_AI_MOCKUP_RENDERS_DETAIL ?? 6);
 
 /** AI render rounds this order may use ("AI renders X/3" for products with a macro shot, X/2 otherwise). */
 export function aiRenderCap(spec: Pick<Specifications, 'category' | 'construction_type'>): number {
