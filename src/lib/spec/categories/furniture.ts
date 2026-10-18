@@ -3,7 +3,7 @@ import { parseSecondaryMaterial, parseWoodOrMetal } from '@/lib/spec/parsers';
 import { parseCountertop, parseKitchenLayout, parseWallRuns } from '@/lib/spec/parsers';
 import type { Specifications } from '@/lib/types';
 import type { FurnitureAssembly, FurnitureConstruction, FurnitureFinish, FurnitureHardware, JoineryType } from '@/lib/types';
-import { dimensionsField } from './common';
+import { dimensionsField, directionTopic } from './common';
 
 const pick = <T,>(rules: Array<[RegExp, T]>) => (t: string) => rules.find(([re]) => re.test(t))?.[1];
 const SEATING = ['DINING_TABLE', 'BENCH', 'COFFEE_TABLE'];
@@ -285,6 +285,7 @@ export const FURNITURE: CategorySchema<'FURNITURE'> = {
     { id: 'board_finish', label: 'Finishing', ask: 'finishing luarnya mau HPL (motif kayu atau warna solid, tahan gores), duco (cat mulus, warna bebas), atau melamic (serat kayu tetap kelihatan)', required: true, fields: ['finish_coating'], applies_to: BUILT_IN_FURNITURE, deferrable: true },
     { id: 'hardware', label: 'Engsel & rel', ask: 'engsel pintu dan rel lacinya mau yang standar, atau soft-close (nutupnya pelan dan nggak bunyi)', required: true, fields: ['hardware_fittings'], applies_to: BUILT_IN_FURNITURE, deferrable: true },
     { id: 'countertop', label: 'Top table', ask: 'meja atas (top table) dapurnya mau granit, marmer, atau solid surface', required: true, fields: ['countertop'], applies_to: ['KITCHEN_SET'], deferrable: true },
+    directionTopic<'FURNITURE'>(),
     { id: 'joinery', label: 'Sambungan', ask: 'nanti perlu sering dipindah atau dibongkar, atau dipasang permanen', required: false, fields: ['joinery_type'], excludes: BUILT_IN_FURNITURE, deferrable: true },
     { id: 'upholstery', label: 'Jok', ask: 'dudukannya mau empuk pakai jok, atau kayu polos', required: false, fields: ['upholstery'], applies_to: ['CHAIR', 'STOOL', 'BENCH', 'BED_FRAME'], deferrable: true },
   ],

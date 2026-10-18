@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { orderHidden } from '@/lib/auth';
 import { runPatternAgent, templatePattern } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
 
   const store = getStore();
   const order = await store.getOrder(id);
-  if (!order) return Response.json({ error: 'Order not found' }, { status: 404 });
+  if (!order || orderHidden(request, order)) return Response.json({ error: 'Order not found' }, { status: 404 });
   if (order.session_state === 'APPROVED') return Response.json({ error: 'Order already approved; it can no longer be edited' }, { status: 409 });
 
   const edited = normalizeSpecifications(body.specifications);
@@ -30,11 +31,11 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
     return Response.json({ error: `Cannot calculate yet; still missing: ${missing.map((t) => t.label).join(', ')}`, missing: missing.map((t) => t.id) }, { status: 422 });
   }
 
-  const preset = await getPreset(edited.category);
+  const preset = await getPreset(edited.category, order.crafter_id);
   const spec = finalizeSpecifications(edited, preset.defaults);
   const [draft, inventory] = await Promise.all([
     body.use_ai ? runPatternAgent(spec, preset) : Promise.resolve(templatePattern(spec, preset)),
-    store.listInventory(),
+    store.listInventory(order.crafter_id),
   ]);
   const quote = assembleQuote(draft, spec, inventory, preset);
 

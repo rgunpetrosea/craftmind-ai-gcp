@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { orderHidden } from '@/lib/auth';
 import { runOrchestrator } from '@/lib/agents/orchestrator';
 import { getStore } from '@/lib/gcp/firestore';
 import type { AutomationMode } from '@/lib/types';
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
 
   const store = getStore();
   const order = await store.getOrder(id);
-  if (!order) return Response.json({ error: 'Order not found' }, { status: 404 });
+  if (!order || orderHidden(request, order)) return Response.json({ error: 'Order not found' }, { status: 404 });
 
   setAutomationMode(order, mode, mode === 'AI_COPILOT' ? undefined : 'CRAFTER_OVERRIDE', pause_minutes);
   // handing back to the AI is a deliberate crafter decision: it gets a fresh turn budget for this session
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
     );
     // Resume clears the loop / unproductive-chat state completely: escalation reason + note (setAutomationMode above,
     // which removes the dashboard badge) and the strike counter, so the next debounced turn starts from 0.
-    const conversation = await store.getConversation(order.client_info.phone_number);
+    const conversation = await store.getConversation(order.client_info.phone_number, order.crafter_id);
     if (conversation) await store.saveConversation({ ...conversation, confusion_strikes: 0, updated_at: new Date().toISOString() });
     // Catch up on an unanswered client message.
     if (messages.at(-1)?.sender === 'CLIENT' && order.session_state !== 'APPROVED') {

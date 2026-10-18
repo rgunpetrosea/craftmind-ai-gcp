@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { orderHidden, workspaceFromRequest } from '@/lib/auth';
 import { runPatternAgent } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { getPreset, getStore } from '@/lib/gcp/firestore';
@@ -16,12 +17,15 @@ export async function POST(request: NextRequest) {
   };
   const store = getStore();
   const order = body.order_id ? await store.getOrder(body.order_id) : null;
-  if (body.order_id && !order) return Response.json({ error: 'Order not found' }, { status: 404 });
+  if (body.order_id && (!order || orderHidden(request, order))) return Response.json({ error: 'Order not found' }, { status: 404 });
+  const ws = workspaceFromRequest(request);
+  if ('error' in ws) return ws.error;
+  const crafterId = order?.crafter_id ?? ws.workspaceId;
 
   if (!order && !body.specifications) return Response.json({ error: 'order_id or specifications required' }, { status: 400 });
   const spec = normalizeSpecifications(order?.specifications ?? body.specifications);
-  const preset = await getPreset(spec.category);
-  const [draft, inventory] = await Promise.all([runPatternAgent(spec, preset), store.listInventory()]);
+  const preset = await getPreset(spec.category, crafterId);
+  const [draft, inventory] = await Promise.all([runPatternAgent(spec, preset), store.listInventory(crafterId)]);
   const quote = assembleQuote(draft, spec, inventory, preset);
 
   if (order) {

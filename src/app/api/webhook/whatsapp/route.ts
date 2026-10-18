@@ -3,12 +3,16 @@ import { unprocessedClientMessages } from '@/lib/agents/intake-agent';
 import { isOrchestratorRunning, runOrchestrator, runSilentParse } from '@/lib/agents/orchestrator';
 import { getStore } from '@/lib/gcp/firestore';
 import { persistInboundMedia } from '@/lib/gcp/gcs';
+import { orderHidden } from '@/lib/auth';
+import { isConceptRendering } from '@/lib/agents/tools';
+import { isRenderingAngles } from '@/lib/mockups';
 import { createDraftOrder, isOpenOrder } from '@/lib/orders';
 import type { ChatMessage, Conversation, InboundWhatsAppEvent, OrderPayload, WebhookAction } from '@/lib/types';
 import { renderTemplate } from '@/lib/spec/guardrails';
 import { getDebouncer } from '@/lib/utils/debounce';
 import { newId, nowIso } from '@/lib/utils/format';
 import { withSessionLock } from '@/lib/utils/session-lock';
+import { DEFAULT_CRAFTER_ID, familiesOf, sessionKey } from '@/lib/workspaces';
 import {
   detectEscalationKeyword,
   expirePartialPause,
@@ -30,19 +34,39 @@ import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
  * are answered by a single orchestrator run with one combined input.
  */
 
-async function resolveSession(phone: string, clientName: string): Promise<{ order: OrderPayload; conversation: Conversation }> {
+/**
+ * Multi-crafter routing: the event's `crafter_id`, else the workspace that owns the WhatsApp business number it was sent
+ * to (`to_phone_number_id`), else the default workspace.
+ */
+async function resolveCrafterId(event: Pick<InboundWhatsAppEvent, 'crafter_id' | 'to_phone_number_id'>): Promise<string> {
+  if (event.crafter_id?.trim()) return event.crafter_id.trim();
+  if (event.to_phone_number_id) {
+    const workspace = await getStore().findWorkspaceByPhoneNumberId(event.to_phone_number_id);
+    if (workspace) return workspace.crafter_id;
+  }
+  return DEFAULT_CRAFTER_ID;
+}
+
+/** A new draft in the crafter's workspace (its main trade until the product is classified). */
+async function newDraft(phone: string, clientName: string, crafterId: string): Promise<OrderPayload> {
+  const profile = await getStore().getCrafterProfile(crafterId);
+  return createDraftOrder(phone, clientName, 'CUSTOM_GENERIC', { crafterId, family: familiesOf(profile)[0] });
+}
+
+async function resolveSession(phone: string, clientName: string, crafterId: string): Promise<{ order: OrderPayload; conversation: Conversation }> {
   const store = getStore();
-  const conversation = await store.getConversation(phone);
+  const conversation = await store.getConversation(phone, crafterId);
   const existing = conversation ? await store.getOrder(conversation.active_order_id) : null;
   if (conversation && existing && isOpenOrder(existing)) return { order: existing, conversation };
 
-  const order = createDraftOrder(phone, conversation?.client_name_wa ?? clientName);
+  const order = await newDraft(phone, conversation?.client_name_wa ?? clientName, crafterId);
   const fresh: Conversation = {
     phone_number: phone,
     client_name_wa: order.client_info.client_name_wa,
     active_order_id: order.order_id,
     confusion_strikes: 0,
     updated_at: nowIso(),
+    crafter_id: crafterId,
   };
   await Promise.all([store.saveOrder(order), store.saveConversation(fresh)]);
   return { order, conversation: fresh };
@@ -78,15 +102,19 @@ export async function POST(request: NextRequest) {
   if (!phone || (!event.text?.trim() && !event.media?.url)) {
     return Response.json({ error: 'phone_number and text or media are required' }, { status: 400 });
   }
-  return withSessionLock(phone, () => handleEvent(event, phone));
+  const store = getStore();
+  const targeted = event.sender === 'CRAFTER' && event.order_id ? await store.getOrder(event.order_id) : null;
+  if (event.order_id && event.sender === 'CRAFTER' && (!targeted || orderHidden(request, targeted))) return Response.json({ error: 'Order not found' }, { status: 404 });
+  // a crafter reply belongs to its order's workspace; a client message is routed to one
+  const crafterId = targeted?.crafter_id ?? (await resolveCrafterId(event));
+  return withSessionLock(sessionKey(phone, crafterId), () => handleEvent(event, phone, crafterId));
 }
 
-async function handleEvent(event: InboundWhatsAppEvent, phone: string): Promise<Response> {
+async function handleEvent(event: InboundWhatsAppEvent, phone: string, crafterId: string): Promise<Response> {
   const store = getStore();
   const debouncer = getDebouncer();
   const targeted = event.sender === 'CRAFTER' && event.order_id ? await store.getOrder(event.order_id) : null;
-  if (event.order_id && event.sender === 'CRAFTER' && !targeted) return Response.json({ error: 'Order not found' }, { status: 404 });
-  const order = targeted ?? (await resolveSession(phone, event.client_name_wa?.trim() || 'Kak')).order;
+  const order = targeted ?? (await resolveSession(phone, event.client_name_wa?.trim() || 'Kak', crafterId)).order;
   let orderDirty = expirePartialPause(order);
 
   // --- Crafter manual reply -------------------------------------------------
@@ -158,12 +186,12 @@ async function handleEvent(event: InboundWhatsAppEvent, phone: string): Promise<
   });
 }
 
-/** Session poll for the simulator: ?phone=+62… or ?order_id=ORD-… */
+/** Session poll for the simulator: ?phone=+62… (&crafter_id=… outside the default workspace) or ?order_id=ORD-… */
 export async function GET(request: NextRequest) {
   const store = getStore();
   const params = request.nextUrl.searchParams;
   const phone = params.get('phone');
-  const conversation = phone ? await store.getConversation(phone) : null;
+  const conversation = phone ? await store.getConversation(phone, params.get('crafter_id') ?? undefined) : null;
   const orderId = params.get('order_id') ?? conversation?.active_order_id;
   if (!orderId) return Response.json({ conversation: null, order: null, messages: [], ai_pending: false });
 
@@ -176,21 +204,24 @@ export async function GET(request: NextRequest) {
     order,
     messages: await store.listMessages(orderId),
     ai_pending: Boolean(getDebouncer().pendingUntil(orderId)) || isOrchestratorRunning(orderId),
+    // the concept render + design-critic job runs in the background: the chat stays open meanwhile
+    concept_pending: isConceptRendering(orderId) || isRenderingAngles(orderId),
   });
 }
 
-/** Start a fresh draft for this phone number (simulator "new chat"). */
+/** Start a fresh draft for this phone number (simulator "new chat"); ?crafter_id=… for another workspace. */
 export async function DELETE(request: NextRequest) {
   const phone = request.nextUrl.searchParams.get('phone');
   if (!phone) return Response.json({ error: 'phone is required' }, { status: 400 });
-  return withSessionLock(phone, () => startFreshDraft(phone));
+  const crafterId = request.nextUrl.searchParams.get('crafter_id') || DEFAULT_CRAFTER_ID;
+  return withSessionLock(sessionKey(phone, crafterId), () => startFreshDraft(phone, crafterId));
 }
 
-async function startFreshDraft(phone: string): Promise<Response> {
+async function startFreshDraft(phone: string, crafterId: string): Promise<Response> {
   const store = getStore();
-  const conversation = await store.getConversation(phone);
+  const conversation = await store.getConversation(phone, crafterId);
   if (conversation) getDebouncer().cancel(conversation.active_order_id);
-  const order = createDraftOrder(phone, conversation?.client_name_wa ?? 'Kak');
+  const order = await newDraft(phone, conversation?.client_name_wa ?? 'Kak', crafterId);
   await store.saveOrder(order);
   await store.saveConversation({
     phone_number: phone,
@@ -198,6 +229,7 @@ async function startFreshDraft(phone: string): Promise<Response> {
     active_order_id: order.order_id,
     confusion_strikes: 0,
     updated_at: nowIso(),
+    crafter_id: crafterId,
   });
   return Response.json({ order });
 }

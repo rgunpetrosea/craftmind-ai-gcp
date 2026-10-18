@@ -1,23 +1,31 @@
 import { emptySpecifications, normalizeSpecifications } from '@/lib/spec/catalog';
 import { angleDef, LEGACY_ANGLE } from '@/lib/spec/angles';
-import type { CraftCategory, MockupAngle, MockupRender, OrderPayload } from '@/lib/types';
+import type { CraftCategory, CraftFamily, MockupAngle, MockupRender, OrderPayload } from '@/lib/types';
 import { newId, nowIso } from '@/lib/utils/format';
+import { craftFamilyOf, DEFAULT_CRAFTER_ID } from '@/lib/workspaces';
 
-export const DEFAULT_CRAFTER_ID = process.env.CRAFTER_ID ?? 'crafter-demo-01';
+export { DEFAULT_CRAFTER_ID };
 
 /**
- * New draft. The product is unknown until the intake agent classifies it, so the spec starts as the CUSTOM_GENERIC
- * placeholder with construction_type UNSPECIFIED ("unclassified").
+ * New draft in a crafter workspace. The product is unknown until the intake agent classifies it, so the spec starts as
+ * the CUSTOM_GENERIC placeholder with construction_type UNSPECIFIED ("unclassified"); `family` is the workspace's main
+ * trade until then.
  */
-export function createDraftOrder(phone: string, clientName: string, category: CraftCategory = 'CUSTOM_GENERIC'): OrderPayload {
+export function createDraftOrder(
+  phone: string,
+  clientName: string,
+  category: CraftCategory = 'CUSTOM_GENERIC',
+  workspace: { crafterId?: string; family?: CraftFamily } = {},
+): OrderPayload {
   return {
     order_id: newId('ORD'),
     created_at: nowIso(),
-    crafter_id: DEFAULT_CRAFTER_ID,
+    crafter_id: workspace.crafterId ?? DEFAULT_CRAFTER_ID,
     client_info: { phone_number: phone, client_name_wa: clientName },
     session_state: 'IDLE',
     automation_mode: 'AI_COPILOT',
     craft_category: category,
+    craft_family: craftFamilyOf(category, workspace.family),
     specifications: emptySpecifications(category),
     material_sourcing: { status: 'IN_STOCK', sourcing_fee_idr: 0, additional_lead_days: 0 },
     pattern_and_bom: {
@@ -41,7 +49,10 @@ export function normalizeOrder(order: OrderPayload): OrderPayload {
   const { estimated_leather_sqft, ...rest } = bom;
   return {
     ...order,
+    crafter_id: order.crafter_id || DEFAULT_CRAFTER_ID,
     craft_category: specifications.category,
+    // an unclassified order keeps the family it was created in (orders stored before workspaces default to LEATHER)
+    craft_family: craftFamilyOf(specifications.category, order.craft_family ?? 'LEATHER'),
     specifications,
     pattern_and_bom: { ...rest, estimated_material_sqft: rest.estimated_material_sqft ?? estimated_leather_sqft ?? 0 },
     intake: order.intake ? { ...order.intake, deferred_topics: order.intake.deferred_topics ?? [] } : undefined,

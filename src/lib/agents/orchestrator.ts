@@ -2,9 +2,10 @@ import { composeReply, currentBurst, mergeBrief, runIntakeAgent, unprocessedClie
 import { runPatternAgent, templatePattern } from '@/lib/agents/pattern-agent';
 import { assembleQuote } from '@/lib/agents/pricing';
 import { decideNegotiation, DISCOUNT_REQUEST, negotiationHandoverMessage, negotiationReply, offerField, requestedPrice } from '@/lib/agents/negotiation';
-import { batchJobFor, executeGenerateMockupTool, type MockupToolArgs } from '@/lib/agents/tools';
+import { batchJobFor, enqueueMockupTool, type MockupToolArgs } from '@/lib/agents/tools';
+import { completeDesignIntent, designAdvisories, directionProposal, originalityNotice, recommendDirections, resolveDirection } from '@/lib/agents/direction-agent';
 import { isGenericMaterial, resolveGenericMaterial } from '@/lib/agents/inventory-agent';
-import { getStore } from '@/lib/gcp/firestore';
+import { getStore, presetOrDefault } from '@/lib/gcp/firestore';
 import { currentAngles, renderRemainingAnglesInBackground, reusableRender } from '@/lib/mockups';
 import { applyAddOns } from '@/lib/spec/addons';
 import { isBuiltInFurniture } from '@/lib/spec/categories/furniture';
@@ -24,6 +25,7 @@ import {
   topicsFor,
 } from '@/lib/spec/catalog';
 import { findGlossary } from '@/lib/spec/glossary';
+import { isDirectionSet } from '@/lib/spec/directions';
 import {
   LOOP_STRIKE_LIMIT,
   hasDesignContext,
@@ -38,6 +40,7 @@ import {
   turnWarningMessage,
   VISUAL_REQUEST,
   CHANGE_REQUEST,
+  AUTO_DECIDE,
 } from '@/lib/spec/guardrails';
 import { isWithinScope, requestedItemLabel } from '@/lib/spec/offerings';
 import { specCardText } from '@/lib/spec/describe';
@@ -177,6 +180,15 @@ async function commit(orderId: string, patch: Partial<OrchestratorFields>): Prom
   return updated;
 }
 
+/** No material yet: the generic word for the category, which `completeForBom` turns into the house material. */
+function withHouseMaterial(raw: Specifications): Specifications {
+  const spec = normalizeSpecifications(structuredClone(raw));
+  const a = spec.attributes as unknown as Record<string, unknown>;
+  const key = schemaOf(spec.category).material_field;
+  if (!String(a[key] ?? '').trim()) a[key] = spec.category === 'FURNITURE' ? 'kayu' : 'kulit';
+  return spec;
+}
+
 /** Strap-like goods are measured length x width x thickness; thickness defaults to 0.3 cm. */
 const FLAT_GOODS = new Set(['BELT', 'WATCH_STRAP']);
 
@@ -263,6 +275,7 @@ async function updateIntake(orderId: string, patch: Partial<IntakeProgress>): Pr
 function hasNewProductDetails(before: Specifications, after: Specifications, briefBefore?: ClientBrief, briefAfter?: ClientBrief): boolean {
   if (before.category !== after.category || before.construction_type !== after.construction_type) return true;
   if (before.dimension_mode !== after.dimension_mode || before.reference_object !== after.reference_object) return true;
+  if (before.design_direction !== after.design_direction || before.secondary_direction !== after.secondary_direction) return true;
   const a = before.attributes as unknown as Record<string, unknown>;
   const b = after.attributes as unknown as Record<string, unknown>;
   const norm = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : JSON.stringify(v));
@@ -296,7 +309,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
 
   const [messages, conversation] = await Promise.all([
     store.listMessages(orderId),
-    store.getConversation(order.client_info.phone_number),
+    store.getConversation(order.client_info.phone_number, order.crafter_id),
   ]);
   const known = normalizeSpecifications(order.specifications);
   const stored: IntakeProgress = order.intake ?? { asked_topics: [], last_asked: [], deferred_topics: [], question_rounds: 0 };
@@ -335,7 +348,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     if (!rollback) throw new SupersededError({ order, stage: 'SUPERSEDED' });
     const { craft_category, specifications, session_state, material_sourcing, pattern_and_bom, intake, client_brief } = order;
     const restored = await commit(orderId, { craft_category, specifications, session_state, material_sourcing, pattern_and_bom, intake, client_brief });
-    const conv = await store.getConversation(order.client_info.phone_number);
+    const conv = await store.getConversation(order.client_info.phone_number, order.crafter_id);
     if (conv && conv.confusion_strikes !== strikesAtStart) await store.saveConversation({ ...conv, confusion_strikes: strikesAtStart });
     throw new SupersededError({ order: restored, stage: 'SUPERSEDED' });
   };
@@ -344,31 +357,76 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const intake = await runIntakeAgent({ messages, known, progress: stored, profile });
   // nothing committed yet: skip composing the reply (saves the second Gemini call)
   if (await supersededByNewMessage()) await dropRun(false);
-  const [inventory, presets] = await Promise.all([store.listInventory(), store.listPresets()]);
-  const presetFor = (c: OrderPayload['craft_category']) => presets.find((p) => p.category === c)!;
+  // the workspace's OWN stock and presets (strict isolation: a leather studio never allocates teak)
+  const [inventory, presets] = await Promise.all([store.listInventory(order.crafter_id), store.listPresets(order.crafter_id)]);
+  const presetFor = (c: OrderPayload['craft_category']) => presetOrDefault(presets, c);
   // Fill what the client never needs to say: missing axes (e.g. strap thickness) and the concrete stocked material
   // behind "kulit" / "cokelat tua". Pattern, BOM and price can then be computed straight away.
   // ...and furniture add-ons (LED strip, pop-up socket, magic corner...) become priced custom fields, so the quote follows
   const allClientText = messages.filter((m) => m.sender === 'CLIENT' && m.text).map((m) => m.text).join('\n');
-  const spec0 = applyAddOns(
-    completeForBom(intake.specifications, inventory, presetFor(intake.specifications.category)),
+  // Non-blocking default (Design Intelligence Layer v2, section 8): the direction is still open and the client wants a
+  // picture now or leaves it to us ("langsung gambarin", "pilihin aja", "terserah") → the top recommendation is taken,
+  // open deferrable required topics take workshop defaults and a missing material the house material, so the mockup
+  // renders this turn. Only what cannot be defaulted (the product itself, a furniture size) is still asked.
+  const autoDecide =
+    intake.message_intent === 'CRAFT_REQUEST' &&
+    isClassified(intake.specifications) &&
+    topicsFor(intake.specifications).some((t) => t.id === 'direction') &&
+    !isDirectionSet(intake.specifications.design_direction) &&
+    (VISUAL_REQUEST.test(burstText) || AUTO_DECIDE.test(burstText));
+  const specBase = applyAddOns(
+    completeForBom(autoDecide ? withHouseMaterial(intake.specifications) : intake.specifications, inventory, presetFor(intake.specifications.category)),
     allClientText,
     presetFor(intake.specifications.category),
   );
   // Slot-filling check BEFORE planning: a topic the client already answered in everyday words ("saku celana belakang")
   // is settled. Deferrable topics then take the form factor's standard value; they are never asked again.
+  // (The design direction is the exception: it is settled only by a choice or an explicit "terserah", never by
+  // "the client already sounds elegant"; the cards are always proposed first.)
   const answeredDeferrable = intake.answered_topics.filter((key) => {
-    const topic = topicsFor(spec0).find((t) => `${spec0.category}:${t.id}` === key);
-    return topic?.deferrable && !isTopicFilled(spec0, topic);
+    const topic = topicsFor(specBase).find((t) => `${specBase.category}:${t.id}` === key);
+    return topic?.deferrable && topic.id !== 'direction' && !isTopicFilled(specBase, topic);
   });
+  const autoDeferred = autoDecide
+    ? topicsFor(specBase)
+        .filter((t) => t.required && t.deferrable && !isTopicFilled(specBase, t, { deferred_topics: stored.deferred_topics }))
+        .map((t) => topicKey(specBase, t))
+    : [];
   const progress: IntakeProgress = {
     ...stored,
-    deferred_topics: [...new Set([...stored.deferred_topics, ...intake.deferred_topics, ...answeredDeferrable])],
+    deferred_topics: [...new Set([...stored.deferred_topics, ...intake.deferred_topics, ...answeredDeferrable, ...autoDeferred])],
     // answered optional topics also count as asked, so the planner never brings them up later
     asked_topics: [...new Set([...stored.asked_topics, ...intake.answered_topics])],
   };
   // background brief: kept up to date on every turn, whatever the turn ends up doing
   const client_brief = mergeBrief(order.client_brief, intake.brief);
+  // Design intent (Design Intelligence Layer v2): a direction left to the workshop takes the top recommendation, and a
+  // chosen direction brings its original feature, functional advantage and craftsmanship detail.
+  const directionDeferred = progress.deferred_topics.includes(`${specBase.category}:direction`);
+  const spec0 = directionDeferred ? resolveDirection(specBase, client_brief, allClientText) : completeDesignIntent(specBase);
+  // the client picked / confirmed / changed the design direction on this turn (answer to the cards, a named or felt
+  // direction, "pilihin aja"): the draft that follows is a picture they asked for
+  const directionChosenNow = isDirectionSet(spec0.design_direction) && spec0.design_direction !== known.design_direction;
+  // "bikin yang persis / replika": we keep what they like and say the design will be original (section 4)
+  const copyNotice = intake.exact_copy_requested ? originalityNotice(intake.references ?? []) : undefined;
+  const withNotice = (text: string) => (copyNotice ? `${copyNotice}\n\n${text}` : text);
+  /**
+   * Consultant advice on functional / quality contradictions (laptop that won't fit, synthetic leather on a premium wish),
+   * each sent once as its own bubble after the turn's reply. Always resolves true (it never blocks the turn).
+   */
+  const sendAdvisories = async (): Promise<true> => {
+    const advice = designAdvisories(spec0, allClientText);
+    if (!advice.length) return true;
+    const said = new Set((await store.listMessages(orderId)).filter((m) => m.sender === 'AI' && m.text).map((m) => m.text));
+    for (const a of advice) if (!said.has(a.text)) await replyIfStillAllowed(orderId, a.text);
+    return true;
+  };
+  /** Direction cards for this turn when the planner asks for the direction (proposal ids are stored for the answer). */
+  const proposeDirections = (ask: Array<{ id: string }>) => {
+    if (!ask.some((t) => t.id === 'direction')) return undefined;
+    const recs = recommendDirections(spec0, client_brief, allClientText);
+    return { ...directionProposal(spec0, recs, copyNotice), ids: recs.map((r) => r.id) };
+  };
   // Once a spec card has been sent, later messages are corrections: re-quote instead of re-opening optional questions.
   const wasLocked = order.session_state === 'PENDING_CRAFTER_APPROVAL';
   const clientFinished = intake.client_finished || wasLocked;
@@ -471,6 +529,9 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     ...call,
     ...(visualRequest && { requestText: burstText }),
     ...(revisionAdjustment && !call?.adjustment && { adjustment: revisionAdjustment }),
+    // an explicit picture request never ends without a visual (the critic's best pass goes out as a draft); choosing or
+    // changing the design direction ("nomor 1", "ikut rekomendasi", "yang kalem") counts too: the cards promise the picture
+    ...((visualRequest || AUTO_DECIDE.test(burstText) || directionChosenNow) && { clientAsked: true }),
   });
 
   // --- Guardrails: off-topic / prompt injection → polite refusal; the spec and brief are left untouched -------
@@ -565,7 +626,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     const reply = negotiationReply(decision, after.breakdown.total_idr, newAddOns, profile);
     const sent = await say(reply);
     // new add-ons change the look of a draft the client has seen
-    if (sent && revisionRequest) await executeGenerateMockupTool(orderId, profile, mockupArgs());
+    if (sent && revisionRequest) enqueueMockupTool(orderId, profile, mockupArgs());
     return { order: latest, stage: sent ? 'NEGOTIATED' : 'SKIPPED_TAKEOVER', reply };
   }
 
@@ -573,8 +634,11 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   if (blockingQuestions.length) {
     const askedAbout = new Set(blockingQuestions.flatMap((q) => findGlossary(q.text, spec0.category)).map((g) => g.topic));
     const preference = topicsFor(spec0).filter((t) => askedAbout.has(t.id));
-    const ask = [...new Map([...preference, ...plan.missing_required].map((t) => [t.id, t])).values()].slice(0, MAX_QUESTIONS_PER_TURN);
+    // required topics still open (the solo direction proposal only once nothing else is missing)
+    const required = plan.missing_required.some((t) => !t.solo) ? plan.missing_required.filter((t) => !t.solo) : plan.missing_required;
+    const ask = [...new Map([...preference, ...required].map((t) => [t.id, t])).values()].slice(0, MAX_QUESTIONS_PER_TURN);
     const askedKeys = ask.map((t) => topicKey(spec0, t));
+    const proposal = proposeDirections(ask);
     const reply = await composeReply({
       clientName: order.client_info.client_name_wa,
       plan: { ...plan, ask, ready: false },
@@ -589,6 +653,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       mockupComing,
       mockupAllowed: mockupGateOpen,
       mockupDeferred,
+      directionProposal: proposal,
     });
     const latest = await commit(orderId, {
       client_brief,
@@ -606,16 +671,18 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
         question_rounds: progress.question_rounds + 1,
         vision_notes: intake.vision_notes,
         processed_message_id,
+        ...(proposal && { proposed_directions: proposal.ids }),
       },
     });
-    const sent = await say(reply.text);
-    if (sent && mockupGateOpen && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
+    const sent = (await say(proposal ? reply.text : withNotice(reply.text))) && (await sendAdvisories());
+    if (sent && mockupGateOpen && (mockupComing || reply.mockupCall)) enqueueMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
     return { order: latest, stage: sent ? 'ANSWERED' : 'SKIPPED_TAKEOVER', reply: reply.text };
   }
 
   // --- Still gathering: ask the next one or two things, naturally -------------
   if (!plan.ready) {
     const asked = plan.ask.map((t) => topicKey(spec0, t));
+    const proposal = proposeDirections(plan.ask);
     const nextProgress: IntakeProgress = {
       ...progress,
       asked_topics: [...new Set([...progress.asked_topics, ...asked])],
@@ -623,6 +690,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       question_rounds: progress.question_rounds + 1,
       vision_notes: intake.vision_notes,
       processed_message_id,
+      ...(proposal && { proposed_directions: proposal.ids }),
     };
     const reply = await composeReply({
       clientName: order.client_info.client_name_wa,
@@ -637,6 +705,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       mockupComing,
       mockupAllowed: mockupGateOpen,
       mockupDeferred,
+      directionProposal: proposal,
     });
     const latest = await commit(orderId, {
       client_brief,
@@ -646,8 +715,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       intake: nextProgress,
       ...autoBom,
     });
-    const sent = await say(reply.text);
-    if (sent && mockupGateOpen && (mockupComing || reply.mockupCall)) await executeGenerateMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
+    const sent = (await say(proposal ? reply.text : withNotice(reply.text))) && (await sendAdvisories());
+    if (sent && mockupGateOpen && (mockupComing || reply.mockupCall)) enqueueMockupTool(orderId, profile, mockupArgs(reply.mockupCall));
     return { order: latest, stage: sent ? 'GATHERING' : 'SKIPPED_TAKEOVER', reply: reply.text };
   }
 
@@ -685,13 +754,15 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       : visualRequest
         ? 'Siap kak, aku buatin gambarnya dulu ya.'
         : 'Noted kak, sudah kami teruskan ke crafter.';
-  const sent = await say(reply, true);
+  const sent = (await say(withNotice(reply), true)) && (await sendAdvisories());
   if (sent && wantsRender) {
     // one render round for the whole set (or the hand-off message once the render cap is reached); any review angle
     // outside the set (a bag's side profile) follows in the background for the crafter
     // single pass: [{ angle: 1 }, { angle: 2, derived_from: 1 }, { angle: 3, derived_from: 1 }]
-    const tool = await executeGenerateMockupTool(orderId, profile, mockupArgs({ batch_job: batchJobFor(confirmationSet) }));
-    if (tool.status === 'SENT') renderRemainingAnglesInBackground(orderId);
+    enqueueMockupTool(orderId, profile, mockupArgs({ batch_job: batchJobFor(confirmationSet) }), (tool) => {
+      // the crafter's review angles follow in the background (they are staged for approval too, never auto-sent)
+      if (tool.status === 'SENT' || tool.status === 'HELD') renderRemainingAnglesInBackground(orderId);
+    });
   } else if (sent && needsBuild && (latest.media_assets.mockup_angles?.length ?? 0) < 3) {
     // the draft is reused: only the crafter's review angles are missing (current ones are skipped)
     renderRemainingAnglesInBackground(orderId);

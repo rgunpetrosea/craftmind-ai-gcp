@@ -1,13 +1,9 @@
-import { OrdersBoard } from '@/components/dashboard/orders-board';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { SESSION_COOKIE, verifySession } from '@/lib/auth';
 
-export default function DashboardPage() {
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-stone-900">Draft orders</h1>
-        <p className="text-sm text-stone-500">Review AI drafts side by side, take over conversations, and approve quotations.</p>
-      </div>
-      <OrdersBoard />
-    </div>
-  );
+/** Old /dashboard links: to the logged-in crafter's workspace dashboard, or to the login. */
+export default async function DashboardRedirect() {
+  const session = verifySession((await cookies()).get(SESSION_COOKIE)?.value);
+  redirect(session ? `/${session}/dashboard` : '/login');
 }

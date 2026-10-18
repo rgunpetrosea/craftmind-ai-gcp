@@ -48,21 +48,29 @@ craftmind-ai-gcp/
 │   │       ├── orders/
 │   │       │   ├── [id]/approve/route.ts     # Crafter Approval & WA Outbound
 │   │       │   ├── [id]/recalculate/route.ts # Crafter spec correction → BOM, SqFt, labor & price recalculation
+│   │       │   ├── [id]/design-review/route.ts # Crafter concept sign-off: approve & release / regenerate / reject / recheck
 │   │       │   └── [id]/takeover/route.ts    # AI_COPILOT / PARTIAL_PAUSE / FULL_MANUAL switch
 │   │       ├── crafter-profile/route.ts      # Workshop profile (branding + allowed categories)
 │   │       └── scenarios/route.ts            # Test scenarios (from scenarios.csv) for the simulator
 │   ├── lib/
 │   │   ├── gcp/
 │   │   │   ├── gemini.ts             # Google Gen AI SDK Initialization & Wrappers
-│   │   │   ├── firestore.ts          # Firestore DB Client & Helper Rules
-│   │   │   └── gcs.ts                # Google Cloud Storage Upload Handler
+│   │   │   ├── firestore.ts          # DataStore: Firestore (orders, chat_sessions, specifications, critic_reviews, crafter_workspaces) / in-memory
+│   │   │   └── gcs.ts                # Cloud Storage media (renders, sketches), private-bucket reads
+│   │   ├── workspaces.ts             # Multi-crafter routing: crafter_id, craft_family, session keys
 │   │   ├── agents/
 │   │   │   ├── intake-agent.ts       # Agent 1: Structured JSON Parsing
 │   │   │   ├── visual-agent.ts       # Agent 2: Studio Mockup Generator
 │   │   │   ├── inventory-agent.ts    # Agent 3: Stock Matcher & Sourcing
-│   │   │   └── pattern-agent.ts      # Agent 4: 2D Component & BOM Breakdown
+│   │   │   ├── pattern-agent.ts      # Agent 4: 2D Component & BOM Breakdown
+│   │   │   ├── direction-agent.ts    # Design directions: recommend, propose cards, read the choice, concept intent
+│   │   │   └── critic-agent.ts       # Design critic: 10-criterion scores, improvement instructions
+│   │   ├── design-review.ts          # Critic → automatic revision loop (max 2) → hold & escalate to crafter
 │   │   ├── spec/
 │   │   │   ├── catalog.ts            # Construction types, vision cues, pocket defaults, gathering checklist & planner
+│   │   │   ├── directions.ts         # The 10 abstract design directions (customer-facing cards, prompt DNA)
+│   │   │   ├── design-dna.ts         # Private design-DNA library, reference analysis, anti-copying, concept prompt lines
+│   │   │   ├── critic-criteria.ts    # Critic rubric, gated criteria, threshold (client-safe)
 │   │   │   └── describe.ts           # Spec card / pocket / customization text for WhatsApp
 │   │   ├── types/
 │   │   │   └── index.ts              # TypeScript Interfaces for Orders, Specs, BOM, Takeover
@@ -77,6 +85,7 @@ craftmind-ai-gcp/
 │           ├── side-by-side-preview.tsx # Original Sketch vs AI Mockup
 │           ├── spec-editor.tsx        # Editable specification form + "Recalculate BOM & Price"
 │           ├── order-detail.tsx       # Review screen incl. mockup prompt-adjustment card
+│           ├── design-review-panel.tsx # Design intent, proposed directions, critic scores, crafter sign-off
 │           └── bom-table.tsx          # Component Breakdown Table
 ├── scenarios.csv                      # QA matrix (SCN-01..10), source of truth for E2E tests
 └── scripts/
@@ -233,7 +242,7 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 
 ## Crafter Profile, Greeting & Domain Guardrails (v10)
 - `CrafterProfile` { crafter_id, workshop_name, allowed_categories, primary_material, contact_whatsapp } — default in
-  `src/lib/data/crafter-profile.json`, stored via `getCrafterProfile/saveCrafterProfile` (Firestore `crafters/{id}`),
+  `src/lib/data/workspaces.json` (one per workspace), stored via `getCrafterProfile/saveCrafterProfile` (Firestore `crafter_workspaces/{id}`),
   `GET/PUT /api/crafter-profile`, edited on `/dashboard/configurator`. Loaded before every intake turn.
 - `allowed_categories` are OFFERING ids (`src/lib/spec/offerings.ts`: wallets, card_holders, bags, belts, watch_straps,
   shoes, furniture, apparel, jewelry, home_decor, sports_gear) mapped onto craft categories / form factors.
@@ -401,6 +410,133 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
   the margin (`discount_idr` in the breakdown). Reply: add-ons noted + costs rise → updated quote + offer / hold →
   "Harga final tetap dikonfirmasi {{active_crafter_name}} di penawaran resmi". Before the gate opens, prices are not given.
 
+## Design Intelligence Layer v2 (v17, `docs/Praxium_CraftMind_Design_Intelligence_Layer_v2*.pdf`)
+- Pipeline: discover intent → propose abstract directions → generate → critique & revise → crafter approval → present.
+  The assistant is a Bespoke Design Consultant / Product Design Director (reply prompt), the crafter is the final authority.
+- Spec-level design intent (every category, kept on a category switch): `design_direction`, `secondary_direction`,
+  `originality_feature`, `functional_advantage`, `craftsmanship_detail`, `reference_likes`, `reference_do_not_copy`
+  (`normalizeDesignIntent()` in catalog). Order-level `design_review`: `critic_scores`, `decision`, `revision_number`,
+  `crafter_status`, `history`, `held_angles`. `intake.proposed_directions` = card order shown to the client.
+- Directions (`spec/directions.ts`): 10 abstract, customer-facing languages (Quiet Luxury ... Modular Utility). NEVER a brand
+  name in anything the client sees. Explicit names in the chat set the direction; loose adjectives ("elegan") don't.
+- Direction gate: BAG, SMALL_GOODS, FURNITURE have a required, deferrable `direction` topic with `solo: true` (asked alone,
+  after every other required topic), so no mockup renders before a direction is chosen (required spec gate). The Direction
+  Agent (`agents/direction-agent.ts`, pure, offline) ranks directions (named > reference taste > lifestyle cues > form
+  factor > material), and `composeReply({ directionProposal })` sends ack + one light card-list bubble ("Biar gambarnya
+  pas, kakak lebih suka nuansa yang mana?" + ≤3 lines `*feel*: pitch`, one short sentence each, no jargon, recommendation
+  first) + the reason it fits and "pilih nomornya, atau bilang 'pilihin aja'". Each direction has a customer-facing
+  `feel` ("Kalem & Tanpa Logo", "Bentuk Tegas & Klasik", "Seni & Unik"...), a `pitch` and `answer_words`; the design-language
+  `name` and the full card (use fit, silhouette & material logic, original feature, benefit, trade-off) are dashboard
+  and prompt material. Spec card / concept captions say "Nuansa desain: <feel>". `applyDirectionAnswer()` reads "yang
+  kedua", "gabung 1 dan 3", "quiet luxury aja", "yang kalem aja" (feel words, shown cards first), "boleh / terserah /
+  pilihin aja / ikut rekomendasi" (→ the recommendation); extra wording becomes a "Penyesuaian arah desain" custom field.
+  Gemini's `answered_topics` never settles the direction; an explicit deferral takes the top recommendation
+  (`resolveDirection`, also in `finalizeSpecifications`).
+- Non-blocking default: while the direction is open, a picture request (`VISUAL_REQUEST`) or "leave it to you" input
+  (`AUTO_DECIDE`: "langsung gambarin", "gambarin aja", "pilihin aja", "terserah", "ikut rekomendasi") never waits for the
+  cards: the orchestrator applies the top recommendation, defers every open deferrable required topic (standard size, card
+  layout, built-in finishes...), fills a missing material with the house material (`withHouseMaterial` → `completeForBom`)
+  and the mockup renders that turn. Only what has no default (the product itself, a furniture size) is still asked.
+- Anti-marketplace rule: `completeDesignIntent()` guarantees one proposition (direction), one original feature (from the
+  direction card per category family unless the client gave their own), one functional advantage, one craftsmanship detail.
+  `designRiskFlags()` reports contradictions (premium + synthetic leather, laptop bag smaller than the laptop, too many
+  materials, reference without an original feature) to the critic and the dashboard; `designAdvisories()` tells the
+  client the first two (each once, its own bubble after the turn's reply; nothing is changed for them).
+- First turn with a client question: greeting + answer bubble + question bubble (the answer is never dropped); a
+  comparison question ("bedanya Epsom sama veg-tan?") gets the key sentence of each glossary term in one bubble.
+- Design DNA (`spec/design-dna.ts`): the brand list is a PRIVATE research library (never prompted, never offered).
+  `designPromptLines()` adds DESIGN DIRECTION (abstract dna), DESIGN DNA (category principles; built-ins their own),
+  CONCEPT (proposition, original feature, functional advantage, craftsmanship), MATERIAL QUALITY (satin full-grain
+  calfskin, hand saddle stitching, polished solid brass for leather; timber equivalents for furniture; the spec's own
+  material / colour / hardware win), ORIGINALITY (no copy, no logos / monograms / proprietary patterns + the do-not-copy
+  list) and AVOID (anti-marketplace list). A client reference image with do-not-copy items is attached with
+  `REFERENCE_IMAGE_RULE` (taste only). Bump `DESIGN_PROMPT_VERSION` when these lines change (part of the render signature,
+  with the design-intent fields). Mockup prompts now use the finalized spec (the signature already did).
+- Anti-copying: `analyzeReferences()` splits a named brand / product into likes vs do-not-copy (+ taste directions);
+  "persis / replika / KW / 1:1" (not "ga mau persis") → `originalityNotice()` prepended to the reply (or the cards).
+- Design critic (`agents/critic-agent.ts`): separate pass after every render, before the client sees it; MODEL_CHAINS.pro
+  vision model scores 10 criteria 0-100 (+ strengths, weaknesses, improvement instructions, views to revise). The code
+  decides from the scores: gated criteria (Premium Perception, Originality, Visual Identity, Proportion and Balance, View
+  Consistency) all ≥ `CRITIC_THRESHOLD` (80) → APPROVE. Offline / only SVG concepts / call failed → `heuristic` spec-level
+  check: never re-renders, never holds, only flags NEEDS_REVIEW. `DESIGN_CRITIC=off` disables the layer.
+- Improvement loop (`design-review.ts` `reviewConcept`): client-facing renders (generate_mockup_tool) are collected, not
+  streamed; failing → regenerate only the critic's views among the ones just rendered (`renderMockupAngles({ revision })`,
+  label "DESIGN DIRECTOR REVISION n", not recorded as crafter feedback, not counted in the client render cap), max
+  `MAX_CRITIC_REVISIONS` (2). Still failing → renders held (`held_angles`), client gets `CONCEPT_HOLD_MESSAGE`, crafter
+  notified with the score breakdown, status NEEDS_REVIEW, tool status HELD. Background angles: same loop, nothing held.
+  Crafter dashboard renders: scored only. Cost cap `MAX_CRITIC_PASSES_PER_ORDER` (24).
+- Concept jobs: the orchestrator never awaits generate_mockup_tool; `enqueueMockupTool()` runs it (render + critic loop)
+  in the background, one job at a time per order, so the turn ends (`ai_pending` false) and the client can keep chatting.
+  Session GET exposes `concept_pending` (simulator: non-blocking "Menyiapkan gambar konsep…" status, cleared when the job
+  sends the images / draft / hold message); `rendering_angles` on the order detail covers concept jobs too.
+- Best pass & drafts: every pass keeps the renders it judged; on a final failure the highest aggregate (sum of 10 scores)
+  pass's renders are restored as current (`best_pass_revision`). If the client explicitly asked for a picture
+  (`clientAsked`: VISUAL_REQUEST, AUTO_DECIDE, or the design direction chosen / confirmed / changed on this turn —
+  "nomor 1", "ikut rekomendasi", "yang kalem") that best pass is sent with `DRAFT_CONCEPT_MESSAGE`
+  (`draft_released_angles`, crafter status NEEDS_REVIEW, crafter notified); otherwise the renders are held as before.
+- Revision prompts: the critic returns `render_positive` (MUST SHOW descriptors) and `render_negative` (generic MUST NOT
+  SHOW elements, never brands); `runVisualAgent({ revision })` puts a DESIGN REVISION block with them at the TOP of the
+  prompt plus a final CHECK line; non-fresh revisions edit the previous image, fresh ones (originality / identity failed)
+  start over. All prompts pass through `scrubReferences()` (no brand / iconic product names reach the image model).
+- Crafter review (`POST /api/orders/[id]/design-review`): APPROVE (releases held renders with `conceptPresentation()`:
+  direction, original feature, material, benefit, pending items, "bukan jaminan hasil produksi final"), REGENERATE (note =
+  change request, then scored), REJECT, RECHECK, UPDATE_DESIGN. Approving the quotation also signs off the design. The first
+  concept image caption is `conceptIntro()` (direction + original feature + "konsep visual, dicek crafter").
+
+## Google Cloud Infrastructure & Multi-Crafter Workspaces (v18)
+- `USE_FIRESTORE=true` → `FirestoreStore` (firebase-admin, ADC); otherwise `MemoryStore`. Both implement `DataStore`;
+  `getStore()` wraps any (even an older hot-reloaded) instance with order normalization and fallbacks for newer methods.
+- Firestore collections (`COLLECTIONS` in `gcp/firestore.ts`): `orders/{id}` (+ `messages` subcollection, the transcript),
+  `chat_sessions/{session_key}`, `specifications/{order_id}` (spec projection written with every `saveOrder` in one
+  batch), `critic_reviews/{review_id}` (every critic pass via `appendCriticReview`, logged by `design-review.ts`; the
+  order keeps the latest 10), `crafter_workspaces/{crafter_id}`, `inventory`, `presets`. Legacy `conversations` /
+  `crafters` documents are still read as fallbacks. Queries use single-field filters only (no composite indexes);
+  ordering happens in memory. `saveOrder` warns above 900 KiB (inline images; set `GCS_BUCKET`).
+- Workspaces (`lib/workspaces.ts`): every order carries `crafter_id` + `craft_family` (LEATHER | FURNITURE; derived by
+  `craftFamilyOf()`, an unclassified order keeps its workspace's main trade from `familiesOf(profile)`). Inbound events are
+  routed by `crafter_id`, else `to_phone_number_id` → the workspace's `wa_phone_number_id`, else `DEFAULT_CRAFTER_ID`.
+  Chat sessions and the per-phone session lock use `sessionKey(phone, crafterId)` (plain phone for the default workspace,
+  `<crafter_id>__<phone>` otherwise). Always pass `order.crafter_id` to `getConversation`. `GET /api/orders?crafter_id=&family=`,
+  `GET/PUT /api/crafter-profile?crafter_id=` (`?all=1` lists workspaces), webhook GET / DELETE take `crafter_id`.
+- Cloud Storage (`gcp/gcs.ts`): with `GCS_BUCKET`, renders (`storeMedia`) and inbound sketches / voice notes
+  (`persistInboundMedia`) are uploaded (immutable cache headers) and documents hold URLs; an upload failure falls back to
+  an inline data URL. `GCS_PUBLIC_READ=false` → private bucket served by `/api/media/[...path]` (orders/ only).
+  `mediaUrlToPart` reads our own objects through the SDK (lazy import, avoids a module cycle), so private media still
+  reaches Gemini as reference images.
+- Cloud Run: `output: "standalone"`, `Dockerfile` (node 22 bookworm-slim, sharp), `scripts/gcp-deploy.sh setup|deploy`
+  (APIs, Firestore Native, bucket, service account roles, Gemini key in Secret Manager). The debouncer and session lock
+  are in-process and buffered turns run after the response, so the service runs as ONE always-on instance with CPU always
+  allocated (`--min/--max-instances 1 --no-cpu-throttling`). Scaling out needs Cloud Tasks + a distributed lock first.
+
+## Crafter Approval, Mock Auth & Workspace Isolation (v19)
+- Mockups never auto-appear in the client chat. `executeGenerateMockupTool` renders (one fast pass; the critic loop only
+  with `DESIGN_CRITIC=on`, default OFF), then `stageForApproval()` puts the new angles in `design_review.held_angles`
+  with `crafter_status` PENDING_CRAFTER_APPROVAL (NEEDS_REVIEW when the critic failed them), sends the client
+  `APPROVAL_PENDING_MESSAGE` ("Draft konsepnya sudah aku buatkan dan sedang ditinjau sebentar oleh Crafter kami...")
+  and notifies the crafter. Only already-approved angles are re-sent directly. The dashboard's `MockupApprovalCard`
+  ("Client request vs AI mockup") shows the client's words + locked spec next to the held renders; "Approve & Send to
+  Client" = design-review APPROVE (sends them with `conceptPresentation`). The crafter can still force the critic
+  (RECHECK / REGENERATE pass `force: true`).
+- Intake locks explicit details before any draft: BAG closure (flap bags), hardware finish, lining and laptop size
+  (laptop-carrying bag types) and SMALL_GOODS lining are REQUIRED deferrable topics; an optional `visual_reference`
+  topic asks once for a photo of the hardware / stitching / interior the client likes.
+- Mock auth (`lib/auth.ts`): `/login` → `POST /api/auth/login` checks `crafter_workspaces/{id}.login`
+  (sha256("username:password"); demo `leather_artisan` → crafter-leather-01 LEATHER, `wood_artisan` → crafter-wood-02
+  FURNITURE, password craft123, seeded from `data/workspaces.json`) and sets the HMAC-signed `cm_session` cookie
+  (`AUTH_SECRET`). Dashboard routes are `/[workspace_id]/dashboard`, `/presets`, `/inventory`; their layout redirects
+  to /login (no session) or the session's own workspace. Old `/dashboard` redirects.
+- Isolation: inventory and presets live per workspace (`crafter_workspaces/{id}/inventory|presets`, MemoryStore per id),
+  seeded by `seedForWorkspace()` (leather / hardware / lining stock and leather presets vs teak / mahogany / board /
+  iron stock and the FURNITURE preset). `listInventory(crafterId)`, `listPresets(crafterId)`, `getPreset(category,
+  crafterId)`; the orchestrator uses `order.crafter_id`. APIs take the workspace from `workspaceFromRequest()` (session,
+  else `workspace_id` / `crafter_id` param, else DEFAULT_CRAFTER_ID = crafter-leather-01); a session asking for another
+  workspace gets 403, another workspace's order 404 (`orderHidden`). GET /api/crafter-profile is public branding
+  (`allowOverride`, login stripped by `publicProfile`).
+- Simulator: Leather Studio / Wood Studio switcher; every call carries `crafter_id`. Store singletons are keyed by
+  `STORE_VERSION` (bump when the DataStore contract changes).
+- Scenarios: follow-ups may be dashboard calls (`APPROVE`, `wait_for_renders`); checks `APPROVAL_STAGED`,
+  `SPEC_EXPLICIT:a|b|c`. Rows asserting critic results need the server started with `DESIGN_CRITIC=on`.
+
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.
 2. Install `@google/genai` or `@google-cloud/vertexai`, `firebase-admin`, `lucide-react`, and `clsx`.
@@ -434,6 +570,17 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
     that reach a quote live in `SCRIPT` in `scripts/build-scenarios.mjs`. After editing either run `npm run scenarios:build`;
     verify with `npm run scenarios` against a running server (WALKTHROUGH.md §6). Keep all rows passing offline
     (`GEMINI_API_KEY=` blank) and online (`--pause 12` on a free-tier key).
+    The rows follow the Design Intelligence Layer v2 test list (section 14): vague request → direction cards, replica
+    request, premium + synthetic, undersized laptop bag, critic revision loop, terminology question, human takeover, exotic
+    sourcing, crafter override, furniture site visit, plus SCN-11 "langsung gambarin" (non-blocking default). Column
+    `expected_design_checks` holds `;`-separated assertions (`DIRECTION_CARDS`, `CARDS_SHORT`, `AUTO_DIRECTION`, `CARDS_NO_BRANDS`, `NO_RENDER_BEFORE_DIRECTION`, `DIRECTION_CHOSEN`, `DIRECTION_TASTE:A|B`,
+    `ORIGINALITY_NOTICE`, `DO_NOT_COPY`, `RISK_FLAG:x`, `CLIENT_ADVISED:x`, `CRITIC_REVIEWED`, `CRITIC_FAILED:key`,
+    `CRITIC_REVISED`, `IMAGES_SENT`, `MULTI_ANGLE`, `CRAFTER_STATUS:S`, `QUESTION_ANSWERED:x`, `NOT_LOCKED_ON_QUESTION`,
+    `SOURCING_FEE`, `ANGLE_OVERRIDE:ANGLE_n`), implemented in `designCheck()` of `scripts/run-scenarios.mjs`. A `SCRIPT`
+    step can be a crafter-dashboard call (`api(path, body)`, ":order" = the order id; the simulator plays it too).
+    `POST /api/orders/[id]/design-review { action: 'SIMULATE_CRITIC', fail_passes }` forces the next critic passes to fail
+    (Originality 72, View Consistency 74) so the revision loop runs offline; it is refused in production unless
+    `ALLOW_TEST_HOOKS=true`. `GET /api/orders/[id]` returns `risk_flags`.
 13. Before finishing any change: `npm run typecheck && npm run lint && npm run build`.
 
 @AGENTS.md

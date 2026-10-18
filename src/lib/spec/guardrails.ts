@@ -92,7 +92,20 @@ export const HANDOVER_TEMPLATES = {
     'Untuk revisi visual lanjutan, {{active_crafter_name}} yang bakal bantu buatkan sketsa detailnya secara langsung ya kak, supaya lebih akurat secara teknis produksi.',
   LOOP_HANDOVER:
     'Sepertinya ada beberapa detail teknis yang perlu didiskusikan langsung nih. Tak hubungkan ke {{active_crafter_name}} ya kak biar dihitung spesifikasi pasnya!',
+  /** The design critic failed the concept after its automatic revisions: the renders wait for the crafter. */
+  CONCEPT_HOLD:
+    'Konsep gambarnya lagi aku rapikan dulu bareng {{active_crafter_name}} supaya proporsi dan detailnya benar-benar pas ya kak. Begitu sudah dicek, gambarnya langsung kami kirim di sini.',
+  /** The client asked for a picture; the critic still wants changes, so the best pass goes out labelled as a draft. */
+  DRAFT_CONCEPT:
+    'Ini draft konsep awalnya dulu ya kak. Detail dan proporsinya masih aku sempurnakan bareng {{active_crafter_name}}, nanti versi yang sudah dicek aku kirim lagi.',
 } as const;
+
+export const CONCEPT_HOLD_MESSAGE = HANDOVER_TEMPLATES.CONCEPT_HOLD;
+
+/** Sent instead of the images: every new mockup is reviewed by the crafter before the client sees it. */
+export const APPROVAL_PENDING_MESSAGE =
+  'Draft konsepnya sudah aku buatkan dan sedang ditinjau sebentar oleh Crafter kami untuk memastikan kelayakan konstruksinya ya kak.';
+export const DRAFT_CONCEPT_MESSAGE = HANDOVER_TEMPLATES.DRAFT_CONCEPT;
 
 export function renderTemplate(template: string, profile: CrafterProfile): string {
   return template.replaceAll(ACTIVE_CRAFTER_NAME, crafterLabel(profile));
@@ -120,6 +133,14 @@ export function loopHandoverMessage(profile: CrafterProfile): string {
  */
 export const VISUAL_REQUEST =
   /\b(gambar|gambaran|mockup|render|visual|desain|foto)\w*\b[^.?!\n]{0,30}\b(lagi|revisi|ganti|ubah|baru|lain|dong|lihat|liat|terbuka\w*|tertutup|bagian dalam\w*|dalamnya|interior|slot|samping|detail|jahitan\w*)\b|\b(revisi|ganti|ubah)\b[^.?!\n]{0,15}\b(gambar|mockup|desain|visual)\w*|\b(kirim|kirimin|lihat|liat|tunjuk\w*|tampilkan)\w*\b[^.?!\n]{0,15}\b(gambar|gambaran|mockup|desain|visual|posisi terbuka|terbuka\w*|bagian dalam\w*|dalamnya|interior|slot ?kartu\w*|detail jahitan|tampak)\w*|\b(posisi|kondisi) terbuka\w*\b[^.?!\n]{0,20}\b(gimana|kayak apa|seperti apa|dong)\b/i;
+
+/**
+ * The client leaves the design to us or wants a picture right away ("langsung gambarin aja", "pilihin aja", "terserah",
+ * "ikut rekomendasi"). While the design direction is still open this never blocks the mockup: the top recommendation is
+ * applied and open deferrable topics take workshop defaults (Design Intelligence Layer v2, section 8, non-blocking).
+ */
+export const AUTO_DECIDE =
+  /\blangsung\s+(aja\s+|saja\s+)?(di)?(gambar\w*|render\w*|(buat|bikin)\w*\s+(gambar|desain|mockup)\w*)|\bgambar(in|kan)\b|\bpilih(in|kan)\b|\bterserah\b|\bbebas\s+aja\b|\b(ikut|sesuai)\s+(rekomendasi|saran)\w*/i;
 
 /**
  * The client asks to change the design ("ganti slot kartunya jadi miring", "embossnya hapus aja", "warnanya dibikin

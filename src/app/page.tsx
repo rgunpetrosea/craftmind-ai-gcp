@@ -1,12 +1,32 @@
-import { ArrowRight, Boxes, Hand, MessageSquareText, Ruler, Sparkles } from 'lucide-react';
+import { ArrowRight, Boxes, Hand, MessageSquareText, ScanEye, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { WaChatSimulator } from '@/components/simulation/wa-chat-simulator';
 
 const AGENTS = [
-  { icon: MessageSquareText, name: 'Intake Agent', model: 'Gemini Flash', body: 'Chat, voice notes & sketches → structured spec via responseSchema.' },
-  { icon: Sparkles, name: 'Visual Agent', model: 'Gemini Image / Imagen', body: 'Rough sketch → studio-quality concept render.' },
-  { icon: Ruler, name: 'Pattern Agent', model: 'Gemini Pro', body: '2D component breakdown, SqFt leather & labor estimate.' },
-  { icon: Boxes, name: 'Inventory Agent', model: 'Stock matcher', body: 'Allocates shelf stock or flags special sourcing + lead time.' },
+  {
+    icon: MessageSquareText,
+    name: 'Intake Agent',
+    model: 'Gemini Flash',
+    body: 'Multi-turn Indonesian intake, structured specification extraction & guided design direction probing.',
+  },
+  {
+    icon: Sparkles,
+    name: 'Visual Agent',
+    model: 'Gemini 2.5 Flash Image / Imagen',
+    body: 'Studio-quality concept renders based on abstract design directions and client taste references.',
+  },
+  {
+    icon: ScanEye,
+    name: 'Design Intelligence & Critic',
+    model: 'Gemini Pro',
+    body: '10-point design evaluation loop, automated revision refining, and Crafter approval staging.',
+  },
+  {
+    icon: Boxes,
+    name: 'Inventory & Pattern Agent',
+    model: 'Stock matcher · BoM',
+    body: 'Scoped material stock allocation (Leather vs Furniture) and SqFt / BoM labor estimations.',
+  },
 ];
 
 export default function Home() {
@@ -14,20 +34,23 @@ export default function Home() {
     <div className="mx-auto grid max-w-7xl gap-10 px-4 py-10 lg:grid-cols-[1fr_auto]">
       <section className="space-y-8">
         <div className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-leather-500">ArtisanOS · AI Builder Cup 2026</p>
-          <h1 className="text-4xl font-bold leading-tight text-stone-900 sm:text-5xl">
-            From messy WhatsApp chats to a quoted, cut-ready order.
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-leather-500">CraftMind AI · AI Builder Cup 2026</p>
+          <h1 className="text-4xl font-bold leading-tight tracking-tight text-stone-900 sm:text-5xl">
+            From messy WhatsApp chats to a quoted, cut-ready bespoke order.
           </h1>
-          <p className="max-w-xl text-lg text-stone-600">
-            CraftMind AI reads client texts, voice notes and napkin sketches, then drafts the spec, a studio mockup, the pattern
-            breakdown with leather square footage, stock allocation and a quote — for the crafter to approve in one click.
+          <p className="max-w-xl text-lg leading-relaxed text-stone-600">
+            CraftMind AI converts client texts, voice notes, and sketches into structured specs, multi-angle studio mockups, BoM material
+            breakdowns, and formal quotes — with full Crafter approval control.
           </p>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 rounded-lg bg-leather-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-leather-800"
-          >
-            Open crafter dashboard <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 rounded-lg bg-leather-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-leather-800"
+            >
+              Open crafter dashboard <ArrowRight className="h-4 w-4" />
+            </Link>
+            <span className="self-center text-xs text-stone-500">Demo workspaces: Leather Studio · Wood Studio</span>
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -45,19 +68,20 @@ export default function Home() {
 
         <div className="rounded-xl bg-leather-50 p-5 ring-1 ring-leather-200">
           <p className="flex items-center gap-2 text-sm font-semibold text-leather-800">
-            <Hand className="h-4 w-4" /> Human-in-the-loop takeover
+            <Hand className="h-4 w-4" /> Human-in-the-Loop Takeover
           </p>
+          <p className="mt-1 text-sm text-leather-900">Seamless transfer to crafter manual control upon request or rule trigger.</p>
           <ul className="mt-2 space-y-1.5 text-sm text-leather-900">
             <li>
               • Client types <b>admin</b>, <b>crafter</b>, <b>manusia</b> or <b>pemilik</b> → AI switches to <code>FULL_MANUAL</code>.
             </li>
-            <li>
-              • Crafter replies manually → AI enters <code>PARTIAL_PAUSE</code> for 30 minutes, then resumes.
-            </li>
+            <li>• Crafter replies manually → AI enters <code>PARTIAL_PAUSE</code> for 30 minutes, then resumes.</li>
+            <li>• Every AI mockup waits for the crafter&apos;s &ldquo;Approve &amp; Send to Client&rdquo; before the client sees it.</li>
             <li>• AI stalls 3 turns in a row → confusion rule escalates to the crafter.</li>
-            <li>• While paused, every inbound message is logged and flagged for crafter review.</li>
           </ul>
-          <p className="mt-3 text-xs text-leather-700">Try it: use the toggle in the simulator, or send “Mau bicara dengan admin”.</p>
+          <p className="mt-3 text-xs text-leather-700">
+            Try it: switch between Leather Studio and Wood Studio above the chat, or send &ldquo;Mau bicara dengan admin&rdquo;.
+          </p>
         </div>
       </section>
 

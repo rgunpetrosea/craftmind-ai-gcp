@@ -4,11 +4,15 @@ import { FOOTWEAR } from '@/lib/spec/categories/footwear';
 import { FURNITURE } from '@/lib/spec/categories/furniture';
 import { SMALL_GOODS } from '@/lib/spec/categories/small-goods';
 import type { AnyField, CategorySchemas, ConstructionDef, TopicDef } from '@/lib/spec/fields';
+import { resolveDirection } from '@/lib/agents/direction-agent';
+import { DIRECTION_IDS } from '@/lib/spec/directions';
+import { signatureDefaultsToAvoid } from '@/lib/spec/design-dna';
 import type {
   AttributeValue,
   ConstructionType,
   CraftCategory,
   CustomField,
+  DesignDirection,
   DimensionMode,
   Dimensions,
   IntakeProgress,
@@ -146,6 +150,20 @@ export function blankAttributes(category: CraftCategory): Record<string, Attribu
   return Object.fromEntries(Object.entries(schemaOf(category).fields).map(([k, f]) => [k, blankValue(f)]));
 }
 
+/** Design-intent fields every spec carries (category-independent). */
+export const BLANK_DESIGN_INTENT: Pick<
+  Specifications,
+  'design_direction' | 'secondary_direction' | 'originality_feature' | 'functional_advantage' | 'craftsmanship_detail' | 'reference_likes' | 'reference_do_not_copy'
+> = {
+  design_direction: 'UNSPECIFIED',
+  secondary_direction: 'UNSPECIFIED',
+  originality_feature: '',
+  functional_advantage: '',
+  craftsmanship_detail: '',
+  reference_likes: [],
+  reference_do_not_copy: [],
+};
+
 export function emptySpecifications(category: CraftCategory = 'CUSTOM_GENERIC'): Specifications {
   return {
     category,
@@ -156,7 +174,25 @@ export function emptySpecifications(category: CraftCategory = 'CUSTOM_GENERIC'):
     reference_object: '',
     attributes: blankAttributes(category),
     custom_fields: [],
+    ...structuredClone(BLANK_DESIGN_INTENT),
   } as unknown as Specifications;
+}
+
+const asDirection = (v: unknown): DesignDirection => ((DIRECTION_IDS as string[]).includes(v as string) ? (v as DesignDirection) : 'UNSPECIFIED');
+const asText = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+const asList = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && x.trim() !== '').map((x) => x.trim()))].slice(0, 12) : []);
+
+/** Validated design-intent fields of any incoming spec (stored, Gemini, dashboard form). */
+export function normalizeDesignIntent(r: Record<string, unknown>): typeof BLANK_DESIGN_INTENT {
+  return {
+    design_direction: asDirection(r.design_direction),
+    secondary_direction: asDirection(r.secondary_direction),
+    originality_feature: asText(r.originality_feature),
+    functional_advantage: asText(r.functional_advantage),
+    craftsmanship_detail: asText(r.craftsmanship_detail),
+    reference_likes: asList(r.reference_likes),
+    reference_do_not_copy: asList(r.reference_do_not_copy),
+  };
 }
 
 export function isFieldSet(spec: Specifications, key: string): boolean {
@@ -241,6 +277,7 @@ export function normalizeSpecifications(raw: unknown, legacyCategory?: string): 
     reference_object: typeof r.reference_object === 'string' ? r.reference_object : '',
     attributes,
     custom_fields: Array.isArray(r.custom_fields) ? (r.custom_fields as CustomField[]).filter((f) => f && f.label?.trim()) : [],
+    ...normalizeDesignIntent(r),
   } as unknown as Specifications;
 }
 
@@ -324,8 +361,11 @@ export function planConversation(spec: Specifications, progress: IntakeProgress 
   const pending_details = isClassified(spec)
     ? topicsFor(spec).filter((t) => !t.required && !isTopicFilled(spec, t, progress) && !asked.has(`${spec.category}:${t.id}`))
     : [];
-  const ask = missing_required.slice(0, MAX_QUESTIONS_PER_TURN);
-  if (!clientFinished) for (const t of pending_details) if (ask.length < MAX_QUESTIONS_PER_TURN) ask.push(t);
+  // A solo topic (the design-direction proposal) comes after every other required topic and is asked on its own.
+  const others = missing_required.filter((t) => !t.solo);
+  const solo = missing_required.find((t) => t.solo);
+  const ask = others.length ? others.slice(0, MAX_QUESTIONS_PER_TURN) : solo ? [solo] : [];
+  if (!clientFinished && !solo) for (const t of pending_details) if (ask.length < MAX_QUESTIONS_PER_TURN) ask.push(t);
   const ready = missing_required.length === 0 && (clientFinished || pending_details.length === 0);
   return { missing_required, pending_details, ask: ready ? [] : ask, ready };
 }
@@ -390,9 +430,18 @@ export function finalizeSpecifications(spec: Specifications, presetDefaults: Par
   const construction = constructionDef(out.construction_type);
   const cDefaults = (construction?.defaults ?? {}) as Record<string, AttributeValue>;
 
+  // a default never brings in a cited reference's signature (Birkin → no turn-lock flap); the preset default fills it below
+  const avoid = signatureDefaultsToAvoid(out);
+  const allowed = (k: string, v: AttributeValue) => !(typeof v === 'string' && avoid[k]?.includes(v));
   for (const topic of topicsFor(out)) {
     if (topic.fields.some((k) => isFieldSet(out, k))) continue;
-    for (const k of topic.fields) if (cDefaults[k] !== undefined) a[k] = structuredClone(cDefaults[k]);
+    for (const k of topic.fields) if (cDefaults[k] !== undefined && allowed(k, cDefaults[k])) a[k] = structuredClone(cDefaults[k]);
+  }
+
+  // Chrome-tanned leathers (Epsom, Saffiano, nappa, synthetic) can't be burnished: their edges are painted. Only the
+  // default changes; an edge finish the client or crafter chose is kept.
+  if ('edge_finish' in a && (a.edge_finish === 'UNSPECIFIED' || !a.edge_finish) && /epsom|saffiano|chrome|nappa|sintetis|synthetic/i.test(String(a[schema.material_field] ?? ''))) {
+    a.edge_finish = 'EDGE_PAINT';
   }
 
   // Fill axes the client left out (e.g. a card holder given as "9.5x7cm" gets the form factor's typical depth).
@@ -405,9 +454,11 @@ export function finalizeSpecifications(spec: Specifications, presetDefaults: Par
   const hadSize = isFieldSet(out, 'dimensions_cm');
   for (const [key, field] of Object.entries(schema.fields)) {
     if (isValueSet(field, a[key])) continue;
-    const fromConstruction = field.type === 'dimensions' ? cDefaults[key] : undefined;
-    const value = coerceValue(field, presetDefaults[key] ?? fromConstruction);
-    if (value !== undefined && isValueSet(field, value)) a[key] = value;
+    // the form factor's typical value outranks the category-wide workshop default (a tote is open-top even though the
+    // bag preset says "magnetic flap"; a topic the form factor has no question for never got its default above)
+    const fromConstruction = cDefaults[key] !== undefined && allowed(key, cDefaults[key]) ? cDefaults[key] : undefined;
+    const value = coerceValue(field, field.type === 'dimensions' ? (presetDefaults[key] ?? fromConstruction) : (fromConstruction ?? presetDefaults[key]));
+    if (value !== undefined && isValueSet(field, value) && allowed(key, value)) a[key] = value;
   }
   // Size taken from the form factor's standard (client answered in everyday terms or said "terserah"): say so.
   if (!hadSize && isFieldSet(out, 'dimensions_cm') && out.dimension_mode === 'UNSPECIFIED') {
@@ -415,5 +466,7 @@ export function finalizeSpecifications(spec: Specifications, presetDefaults: Par
     out.reference_object = `ukuran standar ${construction?.label ?? schema.label}`;
   }
   if (!out.model_name.trim() && construction) out.model_name = construction.label;
-  return out;
+  // a direction left to the workshop takes the top recommendation; every concept gets its original feature, functional
+  // advantage and craftsmanship detail (Design Intelligence Layer v2, section 5)
+  return resolveDirection(out);
 }

@@ -43,7 +43,7 @@ export function reusableRender(order: OrderPayload, angle: MockupAngle, finalSpe
 
 /** The order's spec as it will be locked (signatures are always taken on this). */
 export async function finalSpecOf(order: OrderPayload): Promise<Specifications> {
-  const preset = await getPreset(order.specifications.category);
+  const preset = await getPreset(order.specifications.category, order.crafter_id);
   return finalizeSpecifications(order.specifications, preset.defaults);
 }
 
@@ -67,6 +67,23 @@ export interface RenderOptions {
   customPrompts?: Partial<Record<MockupAngle, string>>;
   /** Called as soon as each angle is rendered (ANGLE_1 first), e.g. to send it to the client without waiting for the set. */
   onRender?: (render: MockupRender) => Promise<void>;
+  /**
+   * Internal design-critic revision: edits each angle's current render with the critic's improvement instructions. It is
+   * not crafter feedback, so it is not recorded in `feedback` / `mockup_feedback`.
+   */
+  revision?: RevisionDirectives;
+}
+
+/** A design-critic revision as render directives (see `runVisualAgent`). */
+export interface RevisionDirectives {
+  instructions: string;
+  number: number;
+  /** Visual descriptors the render MUST show. */
+  positive?: string[];
+  /** Generic visual elements the render must NOT show. */
+  negative?: string[];
+  /** Render from scratch instead of editing the previous image (copied / generic concepts). */
+  fresh?: boolean;
 }
 
 async function notifyRendered(opts: RenderOptions, render: MockupRender): Promise<void> {
@@ -84,24 +101,27 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
 
   const requested = MOCKUP_ANGLES.filter((a) => (opts.angles ?? MOCKUP_ANGLES).includes(a));
   const byAngle = new Map(currentAngles(order).map((r) => [r.angle, r]));
-  const adjustment = opts.adjustment?.trim() || undefined;
+  const r = opts.revision;
+  const revision = r && (r.instructions.trim() || r.positive?.length || r.negative?.length) ? r : undefined;
+  const feedbackText = opts.adjustment?.trim() || undefined;
   const prompts: Partial<Record<MockupAngle, string>> = { ...order.media_assets.angle_prompts };
   for (const [a, p] of Object.entries(opts.customPrompts ?? {}) as Array<[MockupAngle, string]>) {
     if (p.trim()) prompts[a] = p.trim();
     else delete prompts[a];
   }
   const hardware = order.pattern_and_bom.hardware_list.length ? order.pattern_and_bom.hardware_list : defaultHardware(order.specifications);
-  const common = { orderId, spec: order.specifications, hardware, sketchUrl: order.media_assets.original_sketch_url, adjustment };
   const finalSpec = await finalSpecOf(order);
+  // the finalized spec carries the design concept (direction, original feature...) the prompt must show
+  const common = { orderId, spec: finalSpec, hardware, sketchUrl: order.media_assets.original_sketch_url, adjustment: feedbackText, revision };
   const signatureFor = (a: MockupAngle) => mockupSignature(finalSpec, a, prompts[a]);
-  const feedbackFor = (a: MockupAngle) => (adjustment ? [...(byAngle.get(a)?.feedback ?? []), adjustment] : byAngle.get(a)?.feedback);
+  const feedbackFor = (a: MockupAngle) => (feedbackText ? [...(byAngle.get(a)?.feedback ?? []), feedbackText] : byAngle.get(a)?.feedback);
 
   const results: MockupRender[] = [];
   let anchorUrl = byAngle.get('ANGLE_1')?.url;
   let offline: { reason: string } | undefined;
 
   if (requested.includes('ANGLE_1')) {
-    const r = await runVisualAgent({ ...common, angle: 'ANGLE_1', customPrompt: prompts.ANGLE_1, previousMockupUrl: anchorUrl });
+    const r = await runVisualAgent({ ...common, angle: 'ANGLE_1', customPrompt: prompts.ANGLE_1, previousMockupUrl: revision?.fresh ? undefined : anchorUrl });
     results.push(toRender(r, feedbackFor('ANGLE_1'), signatureFor('ANGLE_1')));
     await notifyRendered(opts, results[0]);
     anchorUrl = r.url;
@@ -117,7 +137,7 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
           ...common,
           angle,
           customPrompt: prompts[angle],
-          previousMockupUrl: byAngle.get(angle)?.url,
+          previousMockupUrl: revision?.fresh ? undefined : byAngle.get(angle)?.url,
           // (an offline SVG anchor is ignored as a reference by mediaUrlToPart)
           consistencyRefUrl: anchorUrl,
           offline,
@@ -141,7 +161,7 @@ export async function renderMockupAngles(orderId: string, opts: RenderOptions = 
     mockup_angles: angles,
     angle_prompts: prompts,
     ...(anchor && { ai_generated_mockup_url: anchor.url, mockup_engine: anchor.engine, mockup_error: anchor.error }),
-    mockup_feedback: adjustment ? [...(latest.media_assets.mockup_feedback ?? []), adjustment] : latest.media_assets.mockup_feedback,
+    mockup_feedback: feedbackText ? [...(latest.media_assets.mockup_feedback ?? []), feedbackText] : latest.media_assets.mockup_feedback,
   };
   await store.saveOrder(latest);
   return results;
@@ -167,7 +187,11 @@ export function renderRemainingAnglesInBackground(orderId: string): void {
     if (!order) return;
     const finalSpec = await finalSpecOf(order);
     const stale = (['ANGLE_2', 'ANGLE_3'] as MockupAngle[]).filter((a) => !reusableRender(order, a, finalSpec));
-    if (stale.length) await renderMockupAngles(orderId, { angles: stale });
+    if (!stale.length) return;
+    await renderMockupAngles(orderId, { angles: stale });
+    // the crafter's review angles go through the design critic too (revised automatically, flagged when they fail)
+    const { reviewConcept } = await import('@/lib/design-review');
+    await reviewConcept(orderId, { angles: stale, source: 'BACKGROUND' });
   })()
     .catch((err) => console.error(`[mockups] background angle render for ${orderId} failed:`, err))
     .finally(() => pendingRenders.delete(orderId));

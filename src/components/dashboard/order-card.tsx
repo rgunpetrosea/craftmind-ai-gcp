@@ -1,4 +1,4 @@
-import { MessageSquareWarning } from 'lucide-react';
+import { MessageSquareWarning, ScanEye } from 'lucide-react';
 import { AutomationBadge, SessionStateBadge } from '@/components/ui/status-badges';
 import { schemaOf } from '@/lib/spec/catalog';
 import { modelLine } from '@/lib/spec/describe';
@@ -36,6 +36,16 @@ export function OrderCard({ row, selected, onSelect }: { row: OrderRow; selected
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <SessionStateBadge state={order.session_state} />
         <AutomationBadge order={order} />
+        {order.design_review?.crafter_status === 'PENDING_CRAFTER_APPROVAL' && !!order.design_review.held_angles?.length && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-300">
+            <ScanEye className="h-3 w-3" /> Mockup to approve
+          </span>
+        )}
+        {order.design_review?.crafter_status === 'NEEDS_REVIEW' && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-300">
+            <ScanEye className="h-3 w-3" /> Design review{order.design_review.held_angles?.length ? ` · ${order.design_review.held_angles.length} held` : ''}
+          </span>
+        )}
         {row.awaiting_review_count > 0 && (
           <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white">
             <MessageSquareWarning className="h-3 w-3" /> {row.awaiting_review_count}

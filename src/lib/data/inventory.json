@@ -1,5 +1,38 @@
 [
   {
+    "stock_id": "STK-CF-BLK-10",
+    "name": "Calfskin Black 1.0mm",
+    "color": "black",
+    "thickness_mm": 1.0,
+    "available_sqft": 30,
+    "price_idr_per_sqft": 150000,
+    "supplier": "Tannery Annonay (import)",
+    "origin": "IMPORT",
+    "material_type": "calfskin"
+  },
+  {
+    "stock_id": "STK-HW-BRS-SET",
+    "name": "Solid brass hardware set (rings, buckles, turn-studs)",
+    "color": "brass",
+    "thickness_mm": 0,
+    "available_sqft": 40,
+    "price_idr_per_sqft": 0,
+    "supplier": "Kuningan Bandung",
+    "origin": "LOCAL",
+    "material_type": "hardware"
+  },
+  {
+    "stock_id": "STK-LN-SUE-TAN",
+    "name": "Pigskin suede lining Tan 0.6mm",
+    "color": "tan",
+    "thickness_mm": 0.6,
+    "available_sqft": 60,
+    "price_idr_per_sqft": 35000,
+    "supplier": "Tannery Garut",
+    "origin": "LOCAL",
+    "material_type": "lining"
+  },
+  {
     "stock_id": "STK-VT-BRN-16",
     "name": "Veg-Tan Brown 1.6mm",
     "color": "brown",

@@ -14,6 +14,8 @@ import { angleDef, builtInRoom, customView, type AngleView, type ViewScope } fro
 import { ceilingHeightCm, isBuiltInFurniture, isFullHeightBuiltIn } from '@/lib/spec/categories/furniture';
 import type { ConstructionType, CraftCategory, MockupAngle, MockupEngine, Specifications } from '@/lib/types';
 import { renderConceptSvg } from '@/lib/utils/svg';
+import { DESIGN_PROMPT_VERSION, designPromptLines, REFERENCE_IMAGE_RULE, scrubReferences } from '@/lib/spec/design-dna';
+import type { RevisionDirectives } from '@/lib/mockups';
 
 /**
  * Agent 2 — Studio Mockup Generator.
@@ -34,6 +36,8 @@ const SHAPE_HINT: Partial<Record<ConstructionType, string>> = {
   TRIFOLD_WALLET: 'a trifold wallet (folds twice into three panels)',
   ACCORDION_WALLET: 'an accordion wallet with a pleated expanding gusset',
   ZIP_AROUND_LONG_WALLET: 'a long zip-around wallet, zipper running around three sides',
+  STRUCTURED_TOTE: 'a structured open-top tote (no flap: the top opening stays open, two top handles)',
+  SLOUCHY_TOTE: 'a soft open-top shoulder tote (no flap: the top opening stays open, two shoulder handles)',
   KITCHEN_SET: 'a custom built-in kitchen set (base cabinets under a countertop, wall-mounted upper cabinets)',
   WARDROBE: 'a custom built-in wardrobe fitted wall to wall',
   TV_CONSOLE: 'a custom built-in TV console / media wall',
@@ -227,6 +231,9 @@ export function visualSpec(spec: Specifications, scope: ViewScope, hardware: str
   // client requests the schema has no field for ("slot kartu miring", "two-tone"): part of the picture and its signature,
   // scoped like regular fields so a closed view never shows interior requests
   const custom = spec.custom_fields.filter((f) => f.value.trim() && (showInterior || customFieldZone(f) !== 'interior'));
+  // what the interior must physically hold (a laptop bag without its padded sleeve reads as unfit for purpose)
+  const laptop = spec.category === 'BAG' ? spec.attributes.laptop_size_inch : 0;
+  if (showInterior && laptop > 0) out.interior_layout = `dedicated padded laptop compartment for a ${laptop}-inch laptop against the back wall, plus a slim zip pocket`;
   return custom.length ? { ...out, custom_requests: Object.fromEntries(custom.map((f) => [f.label, f.value])) } : out;
 }
 
@@ -248,6 +255,9 @@ export function mockupSignature(spec: Specifications, angle: MockupAngle = 'ANGL
     ...(aspect !== '1:1' && { f: aspect }),
     // built-ins: the hard constraints and the prompt version are part of what the render shows
     ...(builtIn && { h: builtInHardConstraints(spec, view.scope), pv: BUILT_IN_PROMPT_VERSION }),
+    // the design concept is part of what every view shows (Design Intelligence Layer v2)
+    d: [spec.design_direction, spec.secondary_direction, spec.originality_feature, spec.craftsmanship_detail, spec.reference_do_not_copy.join('|')],
+    dv: DESIGN_PROMPT_VERSION,
   });
 }
 
@@ -271,7 +281,8 @@ export function buildMockupPrompt(spec: Specifications, hardware: string[], view
     spatial.length ? `SPATIAL RULES: ${spatial.join('; ')}.` : '',
     frame.framing ? `FRAMING: ${frame.framing}` : '',
     view.isolation ? `STRICT RULE: ${view.isolation}` : '',
-    `STYLE: ${room ? BUILT_IN_SCENE : SCENE[spec.category]}, photorealistic, no text, no logo watermark.`,
+    ...designPromptLines(spec, view.scope),
+    `STYLE:${room ? BUILT_IN_SCENE : SCENE[spec.category]}, photorealistic, no text, no logo watermark.`,
     hard.length ? `CHECK BEFORE FINISHING: every HARD CONSTRAINT above is visible in the image${isFullHeightBuiltIn(spec) ? ' (no gap between the cabinet tops and the ceiling)' : ''}.` : '',
   ]
     .filter(Boolean)
@@ -299,6 +310,8 @@ export async function runVisualAgent(input: {
   customPrompt?: string;
   /** Crafter's free-text feedback editing this angle's previous render. */
   adjustment?: string;
+  /** Design-critic revision (Design Intelligence Layer v2, section 11): MUST SHOW / MUST NOT SHOW directives at the top. */
+  revision?: RevisionDirectives;
   /** This angle's current render, used as a reference so feedback edits it instead of starting over. */
   previousMockupUrl?: string;
   /** The ANGLE_1 render, used so the other angles show the SAME product. */
@@ -313,7 +326,32 @@ export async function runVisualAgent(input: {
     : angleDef(input.spec.category, angle, input.spec.construction_type);
   const base = buildMockupPrompt(input.spec, input.hardware ?? [], view, customPrompt);
   const adjustment = input.adjustment?.trim();
-  const prompt = adjustment ? `${base}\nCRAFTER FEEDBACK (highest priority, overrides anything above): ${adjustment}` : base;
+  const rev = input.revision;
+  const positive = rev?.positive?.filter((s) => s.trim()) ?? [];
+  const negative = rev?.negative?.filter((s) => s.trim()) ?? [];
+  // A critic revision leads the prompt (highest priority) as concrete directives, and is checked again at the end, so
+  // Rev 1 / Rev 2 change the picture noticeably instead of re-rendering the same design.
+  const revisionBlock = rev
+    ? [
+        `DESIGN REVISION ${rev.number} (highest priority; keep every customer requirement in PRODUCT SPEC, the design direction and the original feature):`,
+        positive.length ? `MUST SHOW: ${positive.join('; ')}.` : '',
+        negative.length ? `MUST NOT SHOW: ${negative.join('; ')}.` : '',
+        rev.instructions.trim() ? `DIRECTION: ${rev.instructions.trim()}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : '';
+  // brand / iconic-product names never reach the image model (it draws what it is told about)
+  const prompt = scrubReferences(
+    [
+      revisionBlock,
+      base,
+      adjustment ? `CRAFTER FEEDBACK (highest priority, overrides anything above): ${adjustment}` : '',
+      positive.length || negative.length ? 'CHECK BEFORE FINISHING: every MUST SHOW item is clearly visible and no MUST NOT SHOW item appears anywhere in the image.' : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
   const result = { angle, view: view.view, prompt, ...(customPrompt && { custom_prompt: customPrompt }) };
   const offline = (error: string): VisualResult => ({
     ...result,
@@ -329,7 +367,8 @@ export async function runVisualAgent(input: {
   const toPart = (url?: string) => (url ? mediaUrlToPart(url).catch(() => null) : Promise.resolve(null));
   const [sketch, previous, consistency] = await Promise.all([
     angle === 'ANGLE_1' && !customPrompt ? toPart(input.sketchUrl) : Promise.resolve(null),
-    adjustment ? toPart(input.previousMockupUrl) : Promise.resolve(null),
+    // feedback and minor revisions edit the previous image; a fresh revision (copied / generic concept) starts over
+    adjustment || (rev && !rev.fresh) ? toPart(input.previousMockupUrl) : Promise.resolve(null),
     angle !== 'ANGLE_1' || customPrompt ? toPart(input.consistencyRefUrl) : Promise.resolve(null),
   ]);
   const references = [sketch, consistency, previous].filter((p): p is NonNullable<typeof p> => Boolean(p));
@@ -342,8 +381,9 @@ export async function runVisualAgent(input: {
         ? 'GEOMETRY LOCK: the attached image is the Perspective Master Shot (Angle 1). Render the SAME EXACT room derived from it: identical wall layout, window positions, cabinet runs and module divisions, tall unit and appliance positions, materials and colours; change only what CAMERA / SHOT says.'
         : 'The attached studio photo shows THIS EXACT product: keep identical material, colour, hardware and proportions; change only the camera / shot as described' +
           (view.scope === 'EXTERIOR' ? ' and keep it closed' : '') + '.'),
-    previous && "Edit the attached previous render of this angle according to the crafter's feedback while keeping the product recognisable.",
-    sketch && 'Turn the attached rough client sketch into a finished product render.',
+    previous && 'Edit the attached previous render of this angle according to the DESIGN REVISION / feedback in the prompt; change it visibly where they say, keep everything else.',
+    // a photo of someone else's product is a taste reference, never a blueprint (anti-copying guardrail)
+    sketch && (input.spec.reference_do_not_copy.length ? REFERENCE_IMAGE_RULE : 'Turn the attached rough client sketch into a finished, original product render.'),
     hasHardConstraints &&
       references.length &&
       'Where an attached image contradicts a HARD CONSTRAINT (for example standard-height wall cabinets with a gap below the ceiling), follow the HARD CONSTRAINT, not the image.',

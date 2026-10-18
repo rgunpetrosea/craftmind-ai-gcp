@@ -14,6 +14,7 @@ const TYPE_SYNONYMS: Array<[string, RegExp]> = [
   ['crazy horse', /crazy[\s-]?horse/i],
   ['nappa', /nappa|napa/i],
   ['saffiano', /saffiano/i],
+  ['calfskin', /calf\s?skin|calfskin|box ?calf|kulit anak sapi/i],
   ['teak', /jati|teak/i],
   ['mahogany', /mahoni|mahogany/i],
   ['walnut', /walnut/i],
@@ -64,7 +65,7 @@ function thicknessOf(text: string): number | undefined {
   return m ? Number(m[1].replace(',', '.')) : undefined;
 }
 
-const LEATHER_TYPES = new Set(['veg-tan', 'chrome-tan', 'epsom', 'pull-up', 'crazy horse', 'nappa', 'saffiano']);
+const LEATHER_TYPES = new Set(['veg-tan', 'chrome-tan', 'epsom', 'pull-up', 'crazy horse', 'nappa', 'saffiano', 'calfskin']);
 const WOOD_METAL_TYPES = new Set(['teak', 'mahogany', 'walnut', 'suar', 'iron', 'plywood', 'blockboard']);
 
 /** True when the material text names no specific type we stock ("Kulit", "Cokelat tua", "Dark Brown leather", "kayu"). */

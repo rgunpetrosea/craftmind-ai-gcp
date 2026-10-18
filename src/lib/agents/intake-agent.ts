@@ -14,6 +14,7 @@ import {
   isFieldSet,
   isValueSet,
   mergeCustomFields,
+  normalizeDesignIntent,
   normalizeSpecifications,
   schemaOf,
   questionBubbles,
@@ -31,6 +32,9 @@ import { referenceGuide } from '@/lib/spec/references';
 import { findGlossary, NON_STANDARD, PRICE_OR_TIMELINE, QUESTION, REQUEST_AS_QUESTION, withoutExplanationQuestions } from '@/lib/spec/glossary';
 import { DECLINE, FINISHED, num, parseBoardPreference, parseLeatherPreference, parseWoodPreference } from '@/lib/spec/parsers';
 import { detectAddOns, withoutFurnitureAddOns } from '@/lib/spec/addons';
+import { applyDirectionAnswer } from '@/lib/agents/direction-agent';
+import { analyzeReferences, withoutInferredSignatures } from '@/lib/spec/design-dna';
+import { directionName, directionsNamed, isDirectionSet } from '@/lib/spec/directions';
 import { isBuiltInFurniture } from '@/lib/spec/categories/furniture';
 import type {
   AttributeValue,
@@ -41,6 +45,7 @@ import type {
   ClientQuestion,
   ConstructionType,
   CraftCategory,
+  DesignDirection,
   DimensionMode,
   IntakeProgress,
   IntakeResult,
@@ -316,6 +321,8 @@ specification for THIS category only. Facts a CRAFTER states in the chat (agreed
   attribute unchanged until the client states a preference. A request phrased as a question ("bisa bikin X?") IS a request.
 - Corrections are relative to the known spec ("kurang tinggi 3cm" adds 3 cm).
 - Put requests that no attribute covers into custom_fields as short label/value pairs.
+- design: a designer brand or product the client names ("mirip Birkin", "kayak Polène") is a TASTE signal: record what they like
+  and what must not be copied; never treat it as the design direction or as something to replicate.
 
 DIMENSIONS (dimension_mode + reference_object + dimensions_cm), clients rarely know centimetres:
 - Client gives cm ("36x6x26", "9.5x7cm") → EXACT_CM, copy them exactly (two numbers = length x height).
@@ -382,6 +389,40 @@ interface Extraction {
   client_finished: boolean;
   client_questions: ClientQuestion[];
   non_standard_request: { detected: boolean; reason: string };
+  design?: {
+    design_direction: DesignDirection;
+    secondary_direction: DesignDirection;
+    originality_feature: string;
+    reference_likes: string[];
+    reference_do_not_copy: string[];
+    exact_copy_requested: boolean;
+  };
+}
+
+/**
+ * Design intent from the chat (Design Intelligence Layer v2, sections 4 and 8), on top of what the model extracted:
+ * a direction the client named explicitly, the answer to the direction cards we proposed ("yang kedua", "gabung 1 dan
+ * 3", "ikut rekomendasi"), and the anti-copying split of any designer reference (likes vs must-not-copy).
+ */
+function applyDesignIntent(spec: Specifications, allClientText: string, burstText: string, progress: IntakeProgress | undefined, fresh: boolean): Specifications {
+  let out = spec;
+  const refs = analyzeReferences(allClientText);
+  if (refs.likes.length || refs.do_not_copy.length) {
+    out = {
+      ...out,
+      reference_likes: [...new Set([...out.reference_likes, ...refs.likes])].slice(0, 12),
+      reference_do_not_copy: [...new Set([...out.reference_do_not_copy, ...refs.do_not_copy])].slice(0, 12),
+    };
+  }
+  if (!isDirectionSet(out.design_direction)) {
+    const named = directionsNamed(allClientText);
+    if (named.length) out = { ...out, design_direction: named[0] };
+  }
+  // the latest answer to the proposal wins over anything earlier
+  if (fresh && progress?.last_asked.includes(`${out.category}:direction`)) {
+    out = applyDirectionAnswer(out, burstText, progress.proposed_directions ?? []).spec;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +461,7 @@ export async function runIntakeAgent(input: {
   let nonStandard: string | undefined;
   let aiIntent: MessageIntent | undefined;
   let outOfScopeItem: string | undefined;
+  let aiCopyRequest = false;
 
   if (isGeminiConfigured()) {
     try {
@@ -468,6 +510,17 @@ export async function runIntakeAgent(input: {
       if (categoryOfConstruction(x.construction_type) === spec.category) spec = normalizeSpecifications({ ...spec, construction_type: x.construction_type });
       if (x.model_name?.trim()) spec = { ...spec, model_name: x.model_name.trim() };
       spec = { ...spec, custom_fields: mergeCustomFields(spec.custom_fields, x.custom_fields ?? []) };
+      if (x.design) {
+        const d = normalizeDesignIntent(x.design as unknown as Record<string, unknown>);
+        spec = {
+          ...spec,
+          ...(isDirectionSet(d.design_direction) && { design_direction: d.design_direction, secondary_direction: d.secondary_direction }),
+          ...(d.originality_feature && { originality_feature: d.originality_feature }),
+          reference_likes: [...new Set([...spec.reference_likes, ...d.reference_likes])].slice(0, 12),
+          reference_do_not_copy: [...new Set([...spec.reference_do_not_copy, ...d.reference_do_not_copy])].slice(0, 12),
+        } as Specifications;
+        aiCopyRequest = x.design.exact_copy_requested === true;
+      }
       deferred = (x.deferred_topics ?? []).filter((t) => t !== 'none').map((t) => `${spec.category}:${t}`);
       client_finished = client_finished || x.client_finished;
       vision_notes = x.vision_notes || vision_notes;
@@ -501,6 +554,13 @@ export async function runIntakeAgent(input: {
 
   // Explicit cm > site visit > reference table > Gemini's own reference: keeps mode, reference and size consistent.
   spec = resolveDimensionSource(spec, allClientText, aiDimensions);
+
+  // Design intent: named direction, the answer to our direction cards, likes vs must-not-copy of any reference.
+  spec = applyDesignIntent(spec, allClientText, burstText, input.progress, !alreadyProcessed);
+  // a reference's signature the model filled in from its knowledge ("persis Birkin" → turn-lock) is not the client's choice
+  spec = withoutInferredSignatures(spec, allClientText);
+  const burstRefs = analyzeReferences(burstText);
+  const exact_copy_requested = burstRefs.exact_copy_requested || (aiCopyRequest && burstRefs.references.length > 0);
 
   if (!alreadyProcessed) {
     const answered = applyAnswerToAsked(spec, input.progress?.last_asked ?? [], burstText);
@@ -552,6 +612,8 @@ export async function runIntakeAgent(input: {
     non_standard_reason: nonStandard,
     brief,
     answered_topics: [...answered],
+    exact_copy_requested,
+    references: analyzeReferences(allClientText).references,
   };
 }
 
@@ -564,6 +626,9 @@ function replyInstruction(profile?: CrafterProfile): string {
   const material = profile?.primary_material ?? 'custom crafts';
   const list = profile ? allowedList(profile) : 'custom products';
   return `You are the intake assistant for ${name}, specializing exclusively in bespoke ${material} (${list}). Powered by Praxium: help custom clients define what they want to make without stressing them with technical details.
+You are not merely an image generator: you act as a Bespoke Design Consultant and Product Design Director. Help the client discover
+and refine a product worth making: original identity, intentional proportion, craftsmanship value, practical use, maker feasibility.
+The crafter remains the final authority.
 
 STRICT OPERATIONAL RULES:
 1. GREETING: Always introduce ${name} and its specialized craft in the first turn (the greeting bubble is added for you on the first turn; never repeat it).
@@ -585,6 +650,10 @@ CONVERSATIONAL RULES:
 - Never ask technical specs directly (dimensions in cm, leather types/thickness, hardware or zipper codes). Ask about daily usage and lifestyle
   context instead ("Biasa bawa laptop ukuran berapa inch kak?", "Lebih sering diselempang atau dijinjing?").
 - Translate vague client requests (e.g. "vintage tapi modern") into clear, simple options; when you offer options, give at most 2-3.
+- Never offer a designer brand as a style option and never promise a copy, replica or lookalike. A brand the client names is a taste
+  signal: keep what they like (mood, quality, function) and develop an original design. Style options are the abstract design
+  directions only, named by their everyday feel ("Kalem & Tanpa Logo", "Bentuk Tegas & Klasik", "Seni & Unik", ...): no
+  design jargon, one short sentence per option. If the client wants a picture right away, don't hold it back for a style.
 - CRITICAL ANTI-REPETITION RULE: Always read the client's latest response carefully before picking the next question. Do NOT re-ask details the user has already provided. Skip already-filled parameters and move directly to the next missing specification.
 - Topics under ALREADY ANSWERED are settled: acknowledge them briefly if the client just gave them, never ask about them again in any wording.
 - Ask ONLY the topics listed under ASK NOW (max two questions), in that lifestyle style. Never ask anything else; if ASK NOW is empty, just acknowledge.
@@ -622,10 +691,11 @@ function templateAnswer(spec: Specifications, questions: ClientQuestion[]): stri
       seen.add('price');
       continue;
     }
-    for (const g of findGlossary(q.text, spec.category)) {
-      if (!seen.has(g.id)) parts.push(g.explanation);
-      seen.add(g.id);
-    }
+    // a comparison ("bedanya Epsom sama veg-tan?") gets the key sentence of each term, so the answer stays one bubble
+    const terms = findGlossary(q.text, spec.category).filter((g) => !seen.has(g.id));
+    if (terms.length > 1) parts.push(terms.map((g) => g.explanation.split(/(?<=\.)\s+/)[0] ?? g.explanation).join(' '));
+    else parts.push(...terms.map((g) => g.explanation));
+    for (const g of terms) seen.add(g.id);
     if (q.kind === 'DESIGN' && /motif|ukir|emboss|gambar|logo|tulisan/i.test(q.text) && !seen.has('motif')) {
       const emb = (spec.attributes as { embossing_type?: string; embossing_text?: string }).embossing_type;
       parts.push(
@@ -666,8 +736,37 @@ export async function composeReply(input: {
   mockupAllowed?: boolean;
   /** The client asked for a picture before the gate opened: tell them it follows once the open questions are answered. */
   mockupDeferred?: boolean;
+  /**
+   * The direction cards (agents/direction-agent.ts), sent instead of a question while the direction topic is open:
+   * acknowledgment / answers, then the card list bubble, then the recommendation + "pilih, gabung, atau sesuaikan".
+   */
+  directionProposal?: { list: string; closing: string };
 }): Promise<ComposedReply> {
   const questions = input.questions ?? [];
+  if (input.directionProposal) {
+    const { list, closing } = input.directionProposal;
+    if (input.isFirstTurn && input.profile) return { text: [greetingBubble(input.profile), list, closing].join('\n\n') };
+    // the client's questions are answered first, then the cards (never a picture before a direction is chosen)
+    const answer = questions.length
+      ? (
+          await composeReply({
+            ...input,
+            directionProposal: undefined,
+            plan: { ...input.plan, ask: input.plan.ask.filter((t) => t.id !== 'direction') },
+            mockupComing: undefined,
+            mockupDeferred: false,
+            mockupAllowed: false,
+          })
+        ).text
+      : '';
+    const ack = [
+      answer ? shapeBubbles(answer).join(' ') : 'Noted kak.',
+      input.mockupDeferred ? 'Gambarnya langsung aku kirim begitu arah desainnya dipilih ya.' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return { text: [ack, list, closing].join('\n\n') };
+  }
   // First turn: brand greeting bubble + ONE follow-up bubble (max 2 bubbles).
   if (input.isFirstTurn && input.profile) {
     const greeting = greetingBubble(input.profile);
@@ -676,8 +775,10 @@ export async function composeReply(input: {
     }
     const body = await composeReply({ ...input, isFirstTurn: false, firstTurnBody: true });
     const bubbles = shapeBubbles(body.text);
-    // keep the bubble that moves the conversation on (it carries the question)
-    return { text: `${greeting}\n\n${bubbles.length > 1 ? bubbles.at(-1) : (bubbles[0] ?? PRODUCT_QUESTION)}`, mockupCall: body.mockupCall };
+    // keep the bubble that moves the conversation on (it carries the question); a client question is answered first,
+    // so its answer bubble stays too (greeting + answer + question = 3 bubbles)
+    const kept = bubbles.length > 1 ? (questions.length ? [bubbles[0], bubbles.at(-1)!] : [bubbles.at(-1)!]) : [bubbles[0] ?? PRODUCT_QUESTION];
+    return { text: [greeting, ...kept].join('\n\n'), mockupCall: body.mockupCall };
   }
   const siteVisit = input.spec.dimension_mode === 'PENDING_SITE_VISIT' ? '\n\nUntuk ukurannya nanti kami jadwalkan survei ukur ke lokasi kakak.' : '';
   // the images follow this text: say so, so the chat never ends on a bare acknowledgment
@@ -719,7 +820,13 @@ export async function composeReply(input: {
               : input.spec.dimension_mode === 'PENDING_SITE_VISIT'
                 ? 'Size needs an on-site measurement: say the workshop will schedule a measurement visit (survei ukur) and ask the client\'s area/available day if not known.\n'
                 : '') +
-            `SPECIFICATION: ${JSON.stringify({ construction_type: input.spec.construction_type, attributes: input.spec.attributes, custom_fields: input.spec.custom_fields })}\n` +
+            `SPECIFICATION: ${JSON.stringify({
+              construction_type: input.spec.construction_type,
+              attributes: input.spec.attributes,
+              custom_fields: input.spec.custom_fields,
+              design_direction: directionName(input.spec.design_direction) || 'not chosen yet',
+              original_feature: input.spec.originality_feature,
+            })}\n` +
             (input.visionNotes ? `What the photo shows: ${input.visionNotes}\n` : '') +
             (questions.length ? `\nCLIENT QUESTIONS:\n${questions.map((q) => `- (${q.kind}) ${q.text}`).join('\n')}\n` : '') +
             (facts ? `\nGLOSSARY FACTS:\n${facts}\n` : '') +

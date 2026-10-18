@@ -1,7 +1,7 @@
 import type { CategorySchema } from '@/lib/spec/fields';
 import { parseColor, parseCount, parseLaptopInch, parseLining } from '@/lib/spec/parsers';
 import type { BagAttributes, BagClosure, BagStrap, BagStructure } from '@/lib/types';
-import { dimensionsField, embossingFields, leatherEdgeField, leatherField, stitchingMethodField, threadColorField } from './common';
+import { dimensionsField, directionTopic, visualReferenceTopic, embossingFields, leatherEdgeField, leatherField, stitchingMethodField, threadColorField } from './common';
 
 function parseStructure(t: string): BagStructure | undefined {
   if (/kaku|tegap|rigid|structured|terstruktur/i.test(t)) return 'RIGID';
@@ -268,10 +268,24 @@ export const BAG: CategorySchema<'BAG'> = {
       is_filled: (s) => (s.attributes.dimensions_cm.length > 0 && s.attributes.dimensions_cm.height > 0) || s.attributes.laptop_size_inch > 0,
     },
     { id: 'material', label: 'Kulit', ask: 'lebih suka kulit yang makin lama makin cantik (vintage), yang tahan gores dan tetap rapi, atau yang kesannya rugged, dan warnanya mau apa', required: true, fields: ['exterior_leather'], deferrable: false },
+    directionTopic<'BAG'>(),
     { id: 'strap', label: 'Strap', ask: 'tasnya lebih sering diselempang, dijinjing, atau dua-duanya', required: false, fields: ['strap_type'], deferrable: true },
-    { id: 'closure', label: 'Penutup', ask: 'penutupnya mau yang praktis (magnet), pakai kunci putar, atau resleting', required: false, fields: ['main_closure'], applies_to: ['SLING_BAG', 'MESSENGER_BAG', 'EXECUTIVE_BRIEFCASE', 'CROSSBODY_CAMERA_BAG', 'CLUTCH', 'BACKPACK', 'TOP_HANDLE_BAG'], deferrable: true },
-    { id: 'hardware', label: 'Hardware', ask: 'aksesoris logamnya mau warna emas, silver, atau hitam', required: false, fields: ['hardware'], applies_to: ['EXECUTIVE_BRIEFCASE', 'PADEL_RACKET_BAG', 'MESSENGER_BAG'], deferrable: true },
-    { id: 'lining', label: 'Lining', ask: 'bagian dalamnya mau dilapis kain halus, atau dibiarkan kulit polos', required: false, fields: ['lining'], deferrable: true },
+    // The spec card locks these explicitly before any draft prompt (closure, hardware finish, lining, laptop size);
+    // "terserah" still settles each with the workshop default.
+    { id: 'closure', label: 'Penutup', ask: 'penutupnya mau yang praktis (magnet), pakai kunci putar, atau resleting', required: true, fields: ['main_closure'], applies_to: ['SLING_BAG', 'MESSENGER_BAG', 'EXECUTIVE_BRIEFCASE', 'CROSSBODY_CAMERA_BAG', 'CLUTCH', 'BACKPACK', 'TOP_HANDLE_BAG'], deferrable: true },
+    {
+      id: 'laptop',
+      label: 'Laptop',
+      ask: 'tasnya perlu muat laptop juga, kalau iya ukuran berapa inch',
+      required: true,
+      fields: ['laptop_size_inch'],
+      applies_to: ['MESSENGER_BAG', 'EXECUTIVE_BRIEFCASE', 'BACKPACK', 'HYBRID_BACKPACK_TOTE', 'STRUCTURED_TOTE'],
+      deferrable: true,
+      is_filled: (s) => s.attributes.laptop_size_inch > 0,
+    },
+    { id: 'hardware', label: 'Hardware', ask: 'aksesoris logamnya mau warna emas, silver, atau hitam', required: true, fields: ['hardware'], deferrable: true },
+    { id: 'lining', label: 'Lining', ask: 'bagian dalamnya mau dilapis kain halus, atau dibiarkan kulit polos', required: true, fields: ['lining'], deferrable: true },
+    visualReferenceTopic<'BAG'>('detail hardware, pola jahitan, atau sekat dalam'),
     { id: 'personalization', label: 'Emboss', ask: 'mau ditambah inisial nama atau logo di luar tasnya', required: false, fields: ['embossing_type'], deferrable: true },
   ],
 };

@@ -1,11 +1,13 @@
 import type { NextRequest } from 'next/server';
+import { orderHidden } from '@/lib/auth';
 import { getStore } from '@/lib/gcp/firestore';
 import { currentAngles } from '@/lib/mockups';
 import { angleDef } from '@/lib/spec/angles';
 import { schemaOf } from '@/lib/spec/catalog';
-import { modelLine, specLines } from '@/lib/spec/describe';
+import { blankReview } from '@/lib/design-review';
+import { designLines, modelLine, specLines } from '@/lib/spec/describe';
 import type { CraftCategory, MockupAngle } from '@/lib/types';
-import { formatIDR } from '@/lib/utils/format';
+import { formatIDR, nowIso } from '@/lib/utils/format';
 import { sendToClient } from '@/lib/whatsapp';
 
 /** Base production time per category, before any special-sourcing delay. */
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
 
   const store = getStore();
   const order = await store.getOrder(id);
-  if (!order) return Response.json({ error: 'Order not found' }, { status: 404 });
+  if (!order || orderHidden(request, order)) return Response.json({ error: 'Order not found' }, { status: 404 });
   if (order.session_state === 'APPROVED') return Response.json({ error: 'Order already approved' }, { status: 409 });
   if (!order.pattern_and_bom.components_breakdown.length) {
     return Response.json({ error: 'Order has no BOM yet; complete the specification first' }, { status: 409 });
@@ -39,6 +41,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
   if (typeof body.quotation_idr === 'number' && body.quotation_idr > 0) order.pattern_and_bom.suggested_quotation_idr = Math.round(body.quotation_idr);
   order.session_state = 'APPROVED';
   order.media_assets.approved_angles = gallery.map((r) => r.angle);
+  // approving the quotation signs off the design concept too (held renders included in `angles` are released with it)
+  order.design_review = { ...(order.design_review ?? blankReview()), crafter_status: 'APPROVED', held_angles: undefined, updated_at: nowIso() };
   await store.saveOrder(order);
 
   const s = order.specifications;
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
     `Halo kak ${order.client_info.client_name_wa}, berikut penawaran dari workshop kami:`,
     '',
     `• Produk: ${modelLine(s)}`,
+    ...designLines(s),
     ...specLines(s),
     `• ${schemaOf(s.category).material_label} terpakai: ±${order.pattern_and_bom.estimated_material_sqft} sqft`,
     src.status === 'SPECIAL_SOURCING_NEEDED' ? `• Material perlu dipesan khusus (+${src.additional_lead_days} hari)` : '• Material tersedia di workshop',

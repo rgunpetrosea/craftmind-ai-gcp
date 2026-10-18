@@ -1,4 +1,36 @@
-import type { DimensionsField, EnumField, TextField } from '@/lib/spec/fields';
+import type { DimensionsField, EnumField, TextField, TopicDef } from '@/lib/spec/fields';
+import type { CraftCategory } from '@/lib/types';
+
+/**
+ * Design direction (Design Intelligence Layer v2, section 8): before the first mockup the client picks, combines or
+ * adjusts one of up to three abstract directions the Direction Agent proposes ("terserah" takes the recommendation).
+ * The proposal itself is built by agents/direction-agent.ts; `ask` is only the fallback wording.
+ */
+/**
+ * Visual probing (asked once, optional): a photo of the hardware, stitching or interior the client likes says more than
+ * any description. A photo they send becomes the order's sketch / reference image (taste only, never copied).
+ */
+export const visualReferenceTopic = <C extends CraftCategory>(details: string): TopicDef<C> => ({
+  id: 'visual_reference',
+  label: 'Foto contoh',
+  ask: `ada contoh foto ${details} yang disukai, kalau ada kirim aja fotonya`,
+  required: false,
+  fields: [],
+  deferrable: true,
+  // answered by being asked once (a photo, a description, or "nggak ada")
+  is_filled: () => false,
+});
+
+export const directionTopic = <C extends CraftCategory>(): TopicDef<C> => ({
+  id: 'direction',
+  label: 'Arah desain',
+  ask: 'dari arah desain original ini, mana yang paling cocok atau mau digabung',
+  required: true,
+  fields: [],
+  deferrable: true,
+  solo: true,
+  is_filled: (s) => s.design_direction !== 'UNSPECIFIED',
+});
 import {
   parseDimensions,
   parseEdgeFinish,

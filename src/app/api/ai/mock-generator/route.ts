@@ -1,7 +1,9 @@
 import type { NextRequest } from 'next/server';
+import { orderHidden } from '@/lib/auth';
 import { defaultHardware } from '@/lib/agents/pattern-agent';
 import { runVisualAgent } from '@/lib/agents/visual-agent';
 import { getStore } from '@/lib/gcp/firestore';
+import { reviewConcept } from '@/lib/design-review';
 import { renderMockupAngles } from '@/lib/mockups';
 import { MOCKUP_ANGLES } from '@/lib/spec/angles';
 import { MAX_CRAFTER_RENDERS_PER_ORDER } from '@/lib/spec/guardrails';
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
   }
 
   const order = await getStore().getOrder(body.order_id);
-  if (!order) return Response.json({ error: 'Order not found' }, { status: 404 });
+  if (!order || orderHidden(request, order)) return Response.json({ error: 'Order not found' }, { status: 404 });
 
   const indexed = body.angle_index ? MOCKUP_ANGLES[body.angle_index - 1] : undefined;
   if (body.angle_index && !indexed) return Response.json({ error: 'angle_index must be 1, 2 or 3' }, { status: 400 });
@@ -77,9 +79,12 @@ export async function POST(request: NextRequest) {
   const renders = await renderMockupAngles(order.order_id, { angles, adjustment, customPrompts });
   const latest = await getStore().getOrder(order.order_id);
   if (latest) await getStore().saveOrder({ ...latest, media_assets: { ...latest.media_assets, crafter_render_count: used + 1 } });
+  // the crafter is the authority: their renders are scored by the design critic, never revised automatically
+  const review = await reviewConcept(order.order_id, { angles, source: 'CRAFTER' });
   const offline = renders.filter((r) => r.engine === 'offline-svg');
   return Response.json({
     renders,
+    critic: review.report,
     feedback_applied: Boolean(adjustment) && offline.length < renders.length,
     note: offline.length
       ? `${offline[0].error ?? 'AI image generation unavailable.'}${adjustment || customPrompt ? ' The offline concept cannot apply custom prompts or feedback.' : ''}`

@@ -119,6 +119,8 @@ export interface TopicDef<C extends CraftCategory> {
   is_filled?: (spec: Extract<Specifications, { category: C }>) => boolean;
   /** Whether "terserah" may close the topic with workshop defaults (size and material never can). */
   deferrable: boolean;
+  /** Asked on its own, after every other required topic (the design-direction proposal). */
+  solo?: boolean;
 }
 
 export interface CategorySchema<C extends CraftCategory> {

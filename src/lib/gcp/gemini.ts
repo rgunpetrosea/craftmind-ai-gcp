@@ -56,6 +56,14 @@ export async function mediaUrlToPart(url: string, fallbackMime?: string): Promis
     if (parsed.mimeType === 'image/svg+xml') return null;
     return { inlineData: { mimeType: parsed.mimeType, data: parsed.data } };
   }
+  // our own Cloud Storage objects are read with the service account (works for private buckets and /api/media URLs)
+  // (loaded lazily: gcs → firestore → seed data → agents → this module would otherwise be an import cycle)
+  const { objectPathOf, readMedia } = await import('@/lib/gcp/gcs');
+  const objectPath = objectPathOf(url);
+  if (objectPath) {
+    const media = await readMedia(objectPath);
+    if (media) return media.mimeType === 'image/svg+xml' ? null : { inlineData: { mimeType: media.mimeType, data: media.data.toString('base64') } };
+  }
   if (/^https?:\/\//.test(url)) {
     const res = await fetch(url);
     if (!res.ok) return null;
@@ -74,7 +82,17 @@ function apiStatus(err: unknown): number | undefined {
 }
 
 /** 5xx (overloaded) and 429 (quota/rate) are worth retrying or routing around; 4xx means our request is wrong. */
-const isTransient = (err: unknown) => [429, 500, 502, 503, 504].includes(apiStatus(err) ?? 0);
+const isTransient = (err: unknown) => [429, 500, 502, 503, 504].includes(apiStatus(err) ?? 0) || isNetworkError(err);
+
+/**
+ * Connection-level failures ("fetch failed", resets, DNS / socket timeouts) carry no HTTP status but are the most
+ * transient of all: retry them with backoff instead of writing the model off (which dropped renders to the offline sketch).
+ */
+function isNetworkError(err: unknown): boolean {
+  const e = err as { message?: string; cause?: { code?: string; message?: string }; code?: string };
+  const text = `${e?.message ?? ''} ${e?.code ?? ''} ${e?.cause?.code ?? ''} ${e?.cause?.message ?? ''}`;
+  return /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|UND_ERR|network|other side closed/i.test(text) && !/abort|timeout signal/i.test(e?.message ?? '');
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -83,6 +101,9 @@ function isHardQuota(err: unknown): boolean {
   const msg = String((err as Error)?.message ?? err);
   return /limit:\s*0\b|"quotaValue":"0"|PerDay/i.test(msg);
 }
+
+/** Upper bound for one structured request (vision critic, intake extraction) before the next model is tried. */
+const DEFAULT_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS ?? 90_000);
 
 /** Google's suggested wait for a rate limit ("retryDelay":"17s"), capped. */
 function retryDelayMs(err: unknown, fallbackMs: number): number {
@@ -141,7 +162,10 @@ export async function generateStructured<T>(opts: {
   parts: Part[];
   schema: Schema;
   temperature?: number;
+  /** Per-request timeout; a model that times out is skipped for the next one in the chain (default GEMINI_TIMEOUT_MS). */
+  timeoutMs?: number;
 }): Promise<T> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return withModelFallback(opts.models, async (model) => {
     const response = await getGenAI().models.generateContent({
       model,
@@ -151,6 +175,8 @@ export async function generateStructured<T>(opts: {
         responseMimeType: 'application/json',
         responseSchema: opts.schema,
         temperature: opts.temperature ?? 0.2,
+        // a stalled request must never hold a WhatsApp turn hostage
+        abortSignal: AbortSignal.timeout(timeoutMs),
       },
     });
     const text = response.text;

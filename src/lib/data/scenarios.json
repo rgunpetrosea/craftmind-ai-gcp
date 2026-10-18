@@ -1,32 +1,41 @@
 [
   {
     "id": "SCN-01",
-    "name": "Exact Dimension Standard Bag",
+    "name": "Vague Request No Preferred Style",
     "category": "BAG",
-    "input_type": "text_and_sketch",
-    "needs_attachment": true,
-    "message": "Halo mas, mau bikin messenger bag ukuran 36x6x26 cm pake kulit Veg-Tan Brown 1.6mm tegap ya.",
-    "notes": "Klien memberikan ukuran teknis eksak cm lengkap dengan foto sketsa dasar.",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Halo kak, mau bikin tas kulit buat kerja, yang bagus aja",
+    "notes": "Klien tidak punya preferensi gaya. AI wajib mengusulkan maksimal 3 arah desain abstrak (tanpa nama brand) sebelum gambar apa pun dirender; 'terserah' memilih rekomendasi.",
     "expected": {
       "category": "BAG",
-      "dimension_mode": "EXACT_CM",
-      "dims": [
-        36,
-        6,
-        26
-      ],
+      "dimension_mode": null,
+      "dims": null,
       "reference": null,
       "material_status": "IN_STOCK",
       "automation_mode": "AI_COPILOT",
       "escalation_reason": null,
-      "debounce_bypass": false
+      "debounce_bypass": false,
+      "design_checks": [
+        "DIRECTION_CARDS",
+        "CARDS_SHORT",
+        "CARDS_NO_BRANDS",
+        "NO_RENDER_BEFORE_DIRECTION",
+        "DIRECTION_CHOSEN",
+        "CRITIC_REVIEWED"
+      ]
     },
-    "expected_summary": "EXACT_CM · 36x6x26 cm · IN_STOCK · AI_COPILOT · NONE",
+    "expected_summary": "Unspecified · IN_STOCK · AI_COPILOT · NONE · DIRECTION_CARDS;CARDS_SHORT;CARDS_NO_BRANDS;NO_RENDER_BEFORE_DIRECTION;DIRECTION_CHOSEN;CRITIC_REVIEWED",
     "steps": [
       {
         "as": "CLIENT",
-        "text": "Halo mas, mau bikin messenger bag ukuran 36x6x26 cm pake kulit Veg-Tan Brown 1.6mm tegap ya.",
+        "text": "Halo kak, mau bikin tas kulit buat kerja, yang bagus aja",
         "phase": "scenario"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Model tote aja kak, biasanya bawa laptop 14 inch, kulitnya veg-tan coklat",
+        "phase": "followup"
       },
       {
         "as": "CLIENT",
@@ -42,12 +51,12 @@
   },
   {
     "id": "SCN-02",
-    "name": "Iconic Reference Probing (Birkin/Kelly)",
+    "name": "Replica Request Designer Reference",
     "category": "BAG",
     "input_type": "text_only",
     "needs_attachment": false,
-    "message": "Mas pengen bikin tas tangan modelnya mirip-mirip Hermes Birkin 30 gitu tapi ga mau persis, sama dalemnya minta warna merah burgundy.",
-    "notes": "Klien tidak paham ukuran cm; AI menginferensi dimensi dari benchmark Birkin 30.",
+    "message": "Mas bikinin tas tangan yang persis Hermes Birkin 30 dong, plek sama aslinya, kulit Epsom hitam ya.",
+    "notes": "Permintaan replika: AI menjelaskan desain dikembangkan original, memisahkan yang disukai klien vs yang tidak boleh ditiru, dan arah desain mengikuti selera (bukan brand).",
     "expected": {
       "category": "BAG",
       "dimension_mode": "REFERENCE_BASED",
@@ -56,19 +65,21 @@
       "material_status": "IN_STOCK",
       "automation_mode": "AI_COPILOT",
       "escalation_reason": null,
-      "debounce_bypass": false
+      "debounce_bypass": false,
+      "design_checks": [
+        "ORIGINALITY_NOTICE",
+        "DO_NOT_COPY",
+        "DIRECTION_CARDS",
+        "CARDS_NO_BRANDS",
+        "DIRECTION_TASTE:STRUCTURED_ELEGANCE|HERITAGE_CRAFTSMANSHIP"
+      ]
     },
-    "expected_summary": "REFERENCE_BASED · Hermes Birkin 30 · IN_STOCK · AI_COPILOT · NONE",
+    "expected_summary": "REFERENCE_BASED · Hermes Birkin 30 · IN_STOCK · AI_COPILOT · NONE · ORIGINALITY_NOTICE;DO_NOT_COPY;DIRECTION_CARDS;CARDS_NO_BRANDS;DIRECTION_TASTE:STRUCTURED_ELEGANCE|HERITAGE_CRAFTSMANSHIP",
     "steps": [
       {
         "as": "CLIENT",
-        "text": "Mas pengen bikin tas tangan modelnya mirip-mirip Hermes Birkin 30 gitu tapi ga mau persis, sama dalemnya minta warna merah burgundy.",
+        "text": "Mas bikinin tas tangan yang persis Hermes Birkin 30 dong, plek sama aslinya, kulit Epsom hitam ya.",
         "phase": "scenario"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Kulitnya Epsom hitam aja mas",
-        "phase": "followup"
       },
       {
         "as": "CLIENT",
@@ -84,32 +95,38 @@
   },
   {
     "id": "SCN-03",
-    "name": "Capacity Driven Probing (Gadget/Laptop)",
-    "category": "BAG",
+    "name": "Premium Request With Cheap Material",
+    "category": "SMALL_GOODS",
     "input_type": "text_only",
     "needs_attachment": false,
-    "message": "Mas mau bikin sling bag kulit custom yang penting muat buat iPad Air 11 inch sama charger-nya ya.",
-    "notes": "Ukuran dihitung otomatis berdasarkan dimensi fisik iPad Air 11 inch + toleransi ruang charger.",
+    "message": "Mau dompet bifold yang kelihatan mewah dan premium, tapi pakai kulit sintetis aja biar murah, warna hitam.",
+    "notes": "Kontradiksi premium vs kulit sintetis: aturan anti-marketplace memberi saran ke klien, risk flag ke crafter, dan Design Critic menandai Premium Perception di bawah 80.",
     "expected": {
-      "category": "BAG",
-      "dimension_mode": "REFERENCE_BASED",
+      "category": "SMALL_GOODS",
+      "dimension_mode": null,
       "dims": null,
-      "reference": "iPad Air 11 inch",
-      "material_status": "IN_STOCK",
+      "reference": null,
+      "material_status": null,
       "automation_mode": "AI_COPILOT",
       "escalation_reason": null,
-      "debounce_bypass": false
+      "debounce_bypass": false,
+      "design_checks": [
+        "RISK_FLAG:synthetic",
+        "CLIENT_ADVISED:kulit sintetis susah memberi kesan premium",
+        "CRITIC_FAILED:premium_perception",
+        "CRAFTER_STATUS:NEEDS_REVIEW"
+      ]
     },
-    "expected_summary": "REFERENCE_BASED · iPad Air 11 inch · IN_STOCK · AI_COPILOT · NONE",
+    "expected_summary": "Unspecified · AI_COPILOT · NONE · RISK_FLAG:synthetic;CLIENT_ADVISED:kulit sintetis susah memberi kesan premium;CRITIC_FAILED:premium_perception;CRAFTER_STATUS:NEEDS_REVIEW",
     "steps": [
       {
         "as": "CLIENT",
-        "text": "Mas mau bikin sling bag kulit custom yang penting muat buat iPad Air 11 inch sama charger-nya ya.",
+        "text": "Mau dompet bifold yang kelihatan mewah dan premium, tapi pakai kulit sintetis aja biar murah, warna hitam.",
         "phase": "scenario"
       },
       {
         "as": "CLIENT",
-        "text": "Kulitnya veg-tan coklat 1.6mm ya mas",
+        "text": "Biasanya disimpan di saku celana, bawa 6 kartu sama uang kertas",
         "phase": "followup"
       },
       {
@@ -126,12 +143,199 @@
   },
   {
     "id": "SCN-04",
+    "name": "Laptop Bag Undersized Reference",
+    "category": "BAG",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Mau tas laptop messenger buat laptop 15 inch, ukurannya 28x8x20 cm aja ya, kulit veg-tan coklat 1.6mm.",
+    "notes": "Validasi dimensi fungsional: badan 28 cm tidak muat laptop 15 inch; klien diberi saran, ukuran tetap sesuai permintaan, critic menandai proporsi.",
+    "expected": {
+      "category": "BAG",
+      "dimension_mode": "EXACT_CM",
+      "dims": [
+        28,
+        8,
+        20
+      ],
+      "reference": null,
+      "material_status": "IN_STOCK",
+      "automation_mode": "AI_COPILOT",
+      "escalation_reason": null,
+      "debounce_bypass": false,
+      "design_checks": [
+        "RISK_FLAG:laptop",
+        "CLIENT_ADVISED:belum muat laptop 15 inch",
+        "CRITIC_FAILED:proportion_balance"
+      ]
+    },
+    "expected_summary": "EXACT_CM · 28x8x20 cm · IN_STOCK · AI_COPILOT · NONE · RISK_FLAG:laptop;CLIENT_ADVISED:belum muat laptop 15 inch;CRITIC_FAILED:proportion_balance",
+    "steps": [
+      {
+        "as": "CLIENT",
+        "text": "Mau tas laptop messenger buat laptop 15 inch, ukurannya 28x8x20 cm aja ya, kulit veg-tan coklat 1.6mm.",
+        "phase": "scenario"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      }
+    ]
+  },
+  {
+    "id": "SCN-05",
+    "name": "Multi-Angle Consistency Critic Revision Loop",
+    "category": "BAG",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Mau tas selempang 30x10x20 cm kulit veg-tan coklat 1.6mm, gaya quiet luxury ya, sekalian kirim gambarnya.",
+    "notes": "Critic dipaksa gagal sekali (hook QA SIMULATE_CRITIC): skor gated < 80 memicu revisi otomatis view yang gagal, lalu lolos dan gambar baru dikirim ke klien.",
+    "expected": {
+      "category": "BAG",
+      "dimension_mode": "EXACT_CM",
+      "dims": [
+        30,
+        10,
+        20
+      ],
+      "reference": null,
+      "material_status": "IN_STOCK",
+      "automation_mode": "AI_COPILOT",
+      "escalation_reason": null,
+      "debounce_bypass": false,
+      "design_checks": [
+        "CRITIC_REVISED",
+        "IMAGES_SENT",
+        "MULTI_ANGLE",
+        "CRITIC_REVIEWED"
+      ]
+    },
+    "expected_summary": "EXACT_CM · 30x10x20 cm · IN_STOCK · AI_COPILOT · NONE · CRITIC_REVISED;IMAGES_SENT;MULTI_ANGLE;CRITIC_REVIEWED",
+    "steps": [
+      {
+        "as": "CLIENT",
+        "text": "Halo kak, mau bikin tas kulit",
+        "phase": "setup"
+      },
+      {
+        "as": "API",
+        "path": "/api/orders/:order/design-review",
+        "body": {
+          "action": "SIMULATE_CRITIC",
+          "fail_passes": 1
+        },
+        "text": "/api/orders/:order/design-review {\"action\":\"SIMULATE_CRITIC\",\"fail_passes\":1}",
+        "phase": "setup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Mau tas selempang 30x10x20 cm kulit veg-tan coklat 1.6mm, gaya quiet luxury ya, sekalian kirim gambarnya.",
+        "phase": "scenario"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      }
+    ]
+  },
+  {
+    "id": "SCN-06",
+    "name": "Terminology Question During Intake",
+    "category": "SMALL_GOODS",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Kak, bedanya kulit Epsom sama veg-tan apa ya? Aku mau bikin dompet bifold.",
+    "notes": "Pertanyaan edukasi dijawab dulu dari glosarium tanpa mengunci spec card; pengumpulan spesifikasi berlanjut sampai penawaran.",
+    "expected": {
+      "category": "SMALL_GOODS",
+      "dimension_mode": null,
+      "dims": null,
+      "reference": null,
+      "material_status": "IN_STOCK",
+      "automation_mode": "AI_COPILOT",
+      "escalation_reason": null,
+      "debounce_bypass": false,
+      "design_checks": [
+        "QUESTION_ANSWERED:epsom",
+        "NOT_LOCKED_ON_QUESTION"
+      ]
+    },
+    "expected_summary": "Unspecified · IN_STOCK · AI_COPILOT · NONE · QUESTION_ANSWERED:epsom;NOT_LOCKED_ON_QUESTION",
+    "steps": [
+      {
+        "as": "CLIENT",
+        "text": "Kak, bedanya kulit Epsom sama veg-tan apa ya? Aku mau bikin dompet bifold.",
+        "phase": "scenario"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Epsom hitam aja kak, disimpan di saku celana, bawa 6 kartu dan uang kertas",
+        "phase": "followup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      }
+    ]
+  },
+  {
+    "id": "SCN-07",
+    "name": "Client Explicit Human Takeover",
+    "category": "SMALL_GOODS",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Aku bingung nih mas pilih warnanya. Mau bicara langsung sama mas Fendy / admin-nya dong.",
+    "notes": "Kata kunci 'bicara dengan admin/Fendy' memicu perpindahan otomatis ke FULL_MANUAL.",
+    "expected": {
+      "category": "SMALL_GOODS",
+      "dimension_mode": null,
+      "dims": null,
+      "reference": null,
+      "material_status": "IN_STOCK",
+      "automation_mode": "FULL_MANUAL",
+      "escalation_reason": "CLIENT_REQUEST",
+      "debounce_bypass": false,
+      "design_checks": []
+    },
+    "expected_summary": "REFERENCE_BASED · Unspecified · IN_STOCK · FULL_MANUAL · CLIENT_REQUEST",
+    "steps": [
+      {
+        "as": "CLIENT",
+        "text": "Mau bikin dompet bifold kulit ya mas",
+        "phase": "setup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Aku bingung nih mas pilih warnanya. Mau bicara langsung sama mas Fendy / admin-nya dong.",
+        "phase": "scenario"
+      }
+    ]
+  },
+  {
+    "id": "SCN-08",
     "name": "Exotic Leather Special Sourcing",
     "category": "SMALL_GOODS",
     "input_type": "text_and_sketch",
     "needs_attachment": true,
     "message": "Mau bikin bifold wallet outer-nya pake Himalayan Crocodile taupe/white, interior Novonappa Tan 6 curved card slots.",
-    "notes": "Memicu Special Sourcing Fee + Lead Time ekstra untuk kulit eksotis langka.",
+    "notes": "Kulit eksotis langka memicu Special Sourcing Fee + lead time ekstra.",
     "expected": {
       "category": "SMALL_GOODS",
       "dimension_mode": "EXACT_CM",
@@ -144,9 +348,12 @@
       "material_status": "SPECIAL_SOURCING_NEEDED",
       "automation_mode": "AI_COPILOT",
       "escalation_reason": null,
-      "debounce_bypass": false
+      "debounce_bypass": false,
+      "design_checks": [
+        "SOURCING_FEE"
+      ]
     },
-    "expected_summary": "EXACT_CM · 11.5x9x1.2 cm · SPECIAL_SOURCING_NEEDED · AI_COPILOT · NONE",
+    "expected_summary": "EXACT_CM · 11.5x9x1.2 cm · SPECIAL_SOURCING_NEEDED · AI_COPILOT · NONE · SOURCING_FEE",
     "steps": [
       {
         "as": "CLIENT",
@@ -171,24 +378,110 @@
     ]
   },
   {
-    "id": "SCN-05",
+    "id": "SCN-09",
+    "name": "Crafter Override Angle And Concept",
+    "category": "SMALL_GOODS",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Oke kak, gambarnya sudah pas.",
+    "notes": "Crafter mengganti shot angle 2 lewat dashboard, minta perubahan konstruksi (regenerate dengan catatan, dinilai critic tanpa revisi otomatis), lalu menyetujui konsep.",
+    "expected": {
+      "category": "SMALL_GOODS",
+      "dimension_mode": null,
+      "dims": null,
+      "reference": null,
+      "material_status": "IN_STOCK",
+      "automation_mode": "AI_COPILOT",
+      "escalation_reason": null,
+      "debounce_bypass": false,
+      "design_checks": [
+        "ANGLE_OVERRIDE:ANGLE_2",
+        "CRITIC_REVIEWED",
+        "CRAFTER_STATUS:APPROVED"
+      ]
+    },
+    "expected_summary": "Unspecified · IN_STOCK · AI_COPILOT · NONE · ANGLE_OVERRIDE:ANGLE_2;CRITIC_REVIEWED;CRAFTER_STATUS:APPROVED",
+    "steps": [
+      {
+        "as": "CLIENT",
+        "text": "Mau card holder 9.5x7cm kulit Epsom hitam, gaya modern minimalis ya",
+        "phase": "setup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "if_not_quoted": true,
+        "phase": "setup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "if_not_quoted": true,
+        "phase": "setup"
+      },
+      {
+        "as": "API",
+        "path": "/api/ai/mock-generator",
+        "body": {
+          "order_id": ":order",
+          "angle_index": 2,
+          "custom_angle_prompt": "45-degree view with the card slots fanned out, shallow depth of field"
+        },
+        "text": "/api/ai/mock-generator {\"order_id\":\":order\",\"angle_index\":2,\"custom_angle_prompt\":\"45-degree view with the card slots fanned out, shallow depth of field\"}",
+        "phase": "setup"
+      },
+      {
+        "as": "API",
+        "path": "/api/orders/:order/design-review",
+        "body": {
+          "action": "REGENERATE",
+          "angles": [
+            "ANGLE_1"
+          ],
+          "note": "Ganti tepi jadi turned edge yang lebih tajam"
+        },
+        "text": "/api/orders/:order/design-review {\"action\":\"REGENERATE\",\"angles\":[\"ANGLE_1\"],\"note\":\"Ganti tepi jadi turned edge yang lebih tajam\"}",
+        "phase": "setup"
+      },
+      {
+        "as": "API",
+        "path": "/api/orders/:order/design-review",
+        "body": {
+          "action": "APPROVE",
+          "note": "Konstruksi turned edge sudah sesuai"
+        },
+        "text": "/api/orders/:order/design-review {\"action\":\"APPROVE\",\"note\":\"Konstruksi turned edge sudah sesuai\"}",
+        "phase": "setup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Oke kak, gambarnya sudah pas.",
+        "phase": "scenario"
+      }
+    ]
+  },
+  {
+    "id": "SCN-10",
     "name": "Onsite Furniture Measurement",
     "category": "FURNITURE",
     "input_type": "text_only",
     "needs_attachment": false,
     "message": "Halo mas, mau order nakas kayu custom tempat tidur buat di kamar utama, bentuknya agak minimalis retro.",
-    "notes": "Dimensi diset PENDING_SITE_VISIT dan menambahkan fee/jadwal survey ke rumah klien.",
+    "notes": "Dimensi diset PENDING_SITE_VISIT dan biaya survei ditambahkan; 'kayu' generik memakai kayu jati stok workshop; 'minimalis' langsung menjadi arah desain Modern Minimalism.",
     "expected": {
       "category": "FURNITURE",
       "dimension_mode": "PENDING_SITE_VISIT",
       "dims": null,
       "reference": null,
-      "material_status": "SPECIAL_SOURCING_NEEDED",
+      "material_status": "IN_STOCK",
       "automation_mode": "AI_COPILOT",
       "escalation_reason": null,
-      "debounce_bypass": false
+      "debounce_bypass": false,
+      "design_checks": [
+        "DIRECTION_CHOSEN"
+      ]
     },
-    "expected_summary": "PENDING_SITE_VISIT · Ruangan Nakas Bedside · SPECIAL_SOURCING_NEEDED · AI_COPILOT · NONE",
+    "expected_summary": "PENDING_SITE_VISIT · Ruangan Nakas Bedside · IN_STOCK · AI_COPILOT · NONE · DIRECTION_CHOSEN",
     "steps": [
       {
         "as": "CLIENT",
@@ -208,201 +501,149 @@
     ]
   },
   {
-    "id": "SCN-06",
-    "name": "Client Explicit Human Takeover",
+    "id": "SCN-11",
+    "name": "Langsung Gambarin Default Direction",
     "category": "SMALL_GOODS",
     "input_type": "text_only",
     "needs_attachment": false,
-    "message": "Aku bingung nih mas pilih warnanya. Mau bicara langsung sama mas Fendy / admin-nya dong.",
-    "notes": "Kata kunci 'bicara dengan admin/Fendy' memicu perpindahan otomatis ke FULL_MANUAL.",
+    "message": "Mau bikin dompet bifold kulit hitam, langsung gambarin aja kak.",
+    "notes": "Klien minta gambar langsung tanpa memilih gaya: arah desain rekomendasi dipakai otomatis, ukuran dan slot kartu memakai standar workshop, mockup langsung dikirim (tidak diblokir kartu arah desain).",
     "expected": {
       "category": "SMALL_GOODS",
       "dimension_mode": null,
       "dims": null,
       "reference": null,
       "material_status": "IN_STOCK",
-      "automation_mode": "FULL_MANUAL",
-      "escalation_reason": "CLIENT_REQUEST",
-      "debounce_bypass": false
+      "automation_mode": "AI_COPILOT",
+      "escalation_reason": null,
+      "debounce_bypass": false,
+      "design_checks": [
+        "AUTO_DIRECTION",
+        "APPROVAL_STAGED",
+        "IMAGES_SENT"
+      ]
     },
-    "expected_summary": "REFERENCE_BASED · Unspecified · IN_STOCK · FULL_MANUAL · CLIENT_REQUEST",
+    "expected_summary": "Unspecified · IN_STOCK · AI_COPILOT · NONE · AUTO_DIRECTION;APPROVAL_STAGED;IMAGES_SENT",
     "steps": [
       {
         "as": "CLIENT",
-        "text": "Mau bikin dompet bifold kulit ya mas",
-        "phase": "setup"
+        "text": "Mau bikin dompet bifold kulit hitam, langsung gambarin aja kak.",
+        "phase": "scenario"
       },
       {
         "as": "CLIENT",
-        "text": "Aku bingung nih mas pilih warnanya. Mau bicara langsung sama mas Fendy / admin-nya dong.",
-        "phase": "scenario"
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "API",
+        "path": "/api/orders/:order/design-review",
+        "body": {
+          "action": "APPROVE",
+          "note": "Konstruksi sudah kami cek"
+        },
+        "text": "/api/orders/:order/design-review {\"action\":\"APPROVE\",\"note\":\"Konstruksi sudah kami cek\"}",
+        "wait_for_renders": true,
+        "phase": "followup"
       }
     ]
   },
   {
-    "id": "SCN-07",
-    "name": "Confusion Strike Limit Exceeded",
+    "id": "SCN-12",
+    "name": "Luxury Work Tote One Shot",
     "category": "BAG",
     "input_type": "text_only",
     "needs_attachment": false,
-    "message": "ya gitu deh pokoknya, hehe",
-    "notes": "3 giliran chat berturut-turut (setelah debounce) tanpa konteks desain sehingga AI menyerahkan obrolan ke Crafter (Human). Koreksi seperti 'salah' atau 'revisi' tidak dihitung.",
-    "expected": {
-      "category": "BAG",
-      "dimension_mode": null,
-      "dims": null,
-      "reference": null,
-      "material_status": "IN_STOCK",
-      "automation_mode": "FULL_MANUAL",
-      "escalation_reason": "CONFUSION_RULE",
-      "debounce_bypass": false
-    },
-    "expected_summary": "EXACT_CM · Unspecified · IN_STOCK · FULL_MANUAL · CONFUSION_RULE",
-    "steps": [
-      {
-        "as": "CLIENT",
-        "text": "Mau bikin tas selempang kulit pake flap ya",
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "hmm",
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "wkwkwk",
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "ya gitu deh pokoknya, hehe",
-        "phase": "scenario"
-      }
-    ]
-  },
-  {
-    "id": "SCN-08",
-    "name": "Crafter Manual Reply Pause",
-    "category": "BAG",
-    "input_type": "text_only",
-    "needs_attachment": false,
-    "message": "Gakpapa mas, lanjutkan aja penawarannya.",
-    "notes": "Crafter membalas manual via WA/Dashboard; AI pause otomatis selama 30-60 menit.",
+    "message": "Mau tas tote kulit Epsom hitam 35x14x28 cm buat kerja, muat laptop 13 inch, gaya quiet luxury yang kalem tanpa logo, hardware emas, lining suede. Itu saja kak, kirim gambarnya ya",
+    "notes": "Tas premium dalam satu pesan (arah desain disebut, itu saja): spec langsung terkunci, satu putaran render + Design Critic; semua tampilan harus render AI asli (bukan sketsa offline).",
     "expected": {
       "category": "BAG",
       "dimension_mode": "EXACT_CM",
       "dims": [
-        30,
-        10,
-        20
+        35,
+        14,
+        28
       ],
       "reference": null,
       "material_status": "IN_STOCK",
-      "automation_mode": "PARTIAL_PAUSE",
-      "escalation_reason": "CRAFTER_OVERRIDE",
-      "debounce_bypass": false
+      "automation_mode": "AI_COPILOT",
+      "escalation_reason": null,
+      "debounce_bypass": false,
+      "design_checks": [
+        "DIRECTION_CHOSEN",
+        "SPEC_EXPLICIT:laptop_size_inch|main_closure|hardware|lining",
+        "APPROVAL_STAGED",
+        "IMAGES_SENT",
+        "REAL_RENDERS",
+        "CRAFTER_STATUS:APPROVED"
+      ]
     },
-    "expected_summary": "EXACT_CM · 30x10x20 cm · IN_STOCK · PARTIAL_PAUSE · CRAFTER_OVERRIDE",
+    "expected_summary": "EXACT_CM · 35x14x28 cm · IN_STOCK · AI_COPILOT · NONE · DIRECTION_CHOSEN;SPEC_EXPLICIT:laptop_size_inch|main_closure|hardware|lining;APPROVAL_STAGED;IMAGES_SENT;REAL_RENDERS;CRAFTER_STATUS:APPROVED",
     "steps": [
       {
         "as": "CLIENT",
-        "text": "Mau tas selempang 30x10x20 cm kulit veg-tan coklat 1.6mm",
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
-        "if_not_quoted": true,
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
-        "if_not_quoted": true,
-        "phase": "setup"
-      },
-      {
-        "as": "CRAFTER",
-        "text": "Halo kak, saya Fendy crafternya. Penawarannya saya cek dulu ya",
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Gakpapa mas, lanjutkan aja penawarannya.",
+        "text": "Mau tas tote kulit Epsom hitam 35x14x28 cm buat kerja, muat laptop 13 inch, gaya quiet luxury yang kalem tanpa logo, hardware emas, lining suede. Itu saja kak, kirim gambarnya ya",
         "phase": "scenario"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "CLIENT",
+        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "API",
+        "path": "/api/orders/:order/design-review",
+        "body": {
+          "action": "APPROVE",
+          "note": "Konstruksi sudah kami cek"
+        },
+        "text": "/api/orders/:order/design-review {\"action\":\"APPROVE\",\"note\":\"Konstruksi sudah kami cek\"}",
+        "wait_for_renders": true,
+        "phase": "followup"
       }
     ]
   },
   {
-    "id": "SCN-09",
-    "name": "Multi-Panel Hybrid Leather Wallet",
+    "id": "SCN-13",
+    "name": "Luxury Bifold Wallet One Shot",
     "category": "SMALL_GOODS",
-    "input_type": "text_and_sketch",
-    "needs_attachment": true,
-    "message": "Bikin card holder compact 9.5x7cm outer-nya Pull-Up Biru Tosca, lining-nya pake pigskin suede.",
-    "notes": "Menguji pecahan BoM multi-material dengan stok kulit warna khusus yang out-of-stock.",
+    "input_type": "text_only",
+    "needs_attachment": false,
+    "message": "Mau dompet bifold kulit Epsom etoupe, disimpan di saku celana, isi 8 kartu dan 1 tempat uang, jahitan tangan benang senada, gaya quiet luxury yang kalem tanpa logo. Itu saja kak, kirim gambarnya ya",
+    "notes": "Dompet premium dalam satu pesan: tertutup + interior terbuka + makro jahitan dalam satu putaran render + Design Critic; semua tampilan harus render AI asli.",
     "expected": {
       "category": "SMALL_GOODS",
-      "dimension_mode": "EXACT_CM",
-      "dims": [
-        9.5,
-        0.4,
-        7
-      ],
-      "reference": null,
-      "material_status": "SPECIAL_SOURCING_NEEDED",
-      "automation_mode": "AI_COPILOT",
-      "escalation_reason": null,
-      "debounce_bypass": false
-    },
-    "expected_summary": "EXACT_CM · 9.5x0.4x7 cm · SPECIAL_SOURCING_NEEDED · AI_COPILOT · NONE",
-    "steps": [
-      {
-        "as": "CLIENT",
-        "text": "Bikin card holder compact 9.5x7cm outer-nya Pull-Up Biru Tosca, lining-nya pake pigskin suede.",
-        "phase": "scenario"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
-        "phase": "followup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Terserah mas untuk detail lainnya. Itu saja kak",
-        "phase": "followup"
-      }
-    ]
-  },
-  {
-    "id": "SCN-10",
-    "name": "Fast Response Action Trigger Bypass",
-    "category": "BAG",
-    "input_type": "text_only",
-    "needs_attachment": false,
-    "message": "Sip penjelasannya dapet. Kira-kira kena berapa harganya mas dan ada gambaran mockup visualnya?",
-    "notes": "Pertanyaan intent pemicu harga/mockup membypass timer debounce 10 menit untuk eksekusi AI seketika.",
-    "expected": {
-      "category": "BAG",
       "dimension_mode": null,
       "dims": null,
       "reference": null,
       "material_status": "IN_STOCK",
       "automation_mode": "AI_COPILOT",
       "escalation_reason": null,
-      "debounce_bypass": true
+      "debounce_bypass": false,
+      "design_checks": [
+        "DIRECTION_CHOSEN",
+        "SPEC_EXPLICIT:lining|edge_finish|thread_color",
+        "APPROVAL_STAGED",
+        "IMAGES_SENT",
+        "REAL_RENDERS",
+        "CRAFTER_STATUS:APPROVED"
+      ]
     },
-    "expected_summary": "REFERENCE_BASED · Unspecified · IN_STOCK · AI_COPILOT · NONE",
+    "expected_summary": "Unspecified · IN_STOCK · AI_COPILOT · NONE · DIRECTION_CHOSEN;SPEC_EXPLICIT:lining|edge_finish|thread_color;APPROVAL_STAGED;IMAGES_SENT;REAL_RENDERS;CRAFTER_STATUS:APPROVED",
     "steps": [
       {
         "as": "CLIENT",
-        "text": "Mau bikin tote bag kulit veg-tan coklat 1.6mm, yang muat laptop 14 inch",
-        "phase": "setup"
-      },
-      {
-        "as": "CLIENT",
-        "text": "Sip penjelasannya dapet. Kira-kira kena berapa harganya mas dan ada gambaran mockup visualnya?",
+        "text": "Mau dompet bifold kulit Epsom etoupe, disimpan di saku celana, isi 8 kartu dan 1 tempat uang, jahitan tangan benang senada, gaya quiet luxury yang kalem tanpa logo. Itu saja kak, kirim gambarnya ya",
         "phase": "scenario"
       },
       {
@@ -413,6 +654,17 @@
       {
         "as": "CLIENT",
         "text": "Terserah mas untuk detail lainnya. Itu saja kak",
+        "phase": "followup"
+      },
+      {
+        "as": "API",
+        "path": "/api/orders/:order/design-review",
+        "body": {
+          "action": "APPROVE",
+          "note": "Konstruksi sudah kami cek"
+        },
+        "text": "/api/orders/:order/design-review {\"action\":\"APPROVE\",\"note\":\"Konstruksi sudah kami cek\"}",
+        "wait_for_renders": true,
         "phase": "followup"
       }
     ]

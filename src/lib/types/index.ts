@@ -12,6 +12,12 @@ export type EscalationReason = 'CLIENT_REQUEST' | 'CONFUSION_RULE' | 'CRAFTER_OV
  * Field definitions (labels, UI, Gemini schema, parsers) live in `src/lib/spec/categories/*`.
  */
 export type CraftCategory = 'SMALL_GOODS' | 'BAG' | 'FOOTWEAR' | 'FURNITURE' | 'CUSTOM_GENERIC';
+
+/**
+ * Workspace scope of an order: the trade its crafter works in. Coarser than `CraftCategory` (a leather workshop makes
+ * small goods, bags and footwear), it routes orders to the right crafter workspace on a shared backend.
+ */
+export type CraftFamily = 'LEATHER' | 'FURNITURE';
 export type SourcingStatus = 'IN_STOCK' | 'SPECIAL_SOURCING_NEEDED';
 
 export interface Dimensions {
@@ -256,6 +262,23 @@ export interface CustomField {
   kind?: 'ADD_ON' | 'DISCOUNT';
 }
 
+/**
+ * Abstract, customer-facing design languages (Design Intelligence Layer v2, section 6). They replace brand imitation:
+ * a designer brand the client names is only a taste signal mapped onto these (see spec/design-dna.ts).
+ */
+export type DesignDirection =
+  | 'UNSPECIFIED'
+  | 'QUIET_LUXURY'
+  | 'STRUCTURED_ELEGANCE'
+  | 'CONTEMPORARY_ARTISAN'
+  | 'MODERN_MINIMALISM'
+  | 'ARCHITECTURAL'
+  | 'HERITAGE_CRAFTSMANSHIP'
+  | 'PRACTICAL_LUXURY'
+  | 'SOFT_CONTEMPORARY'
+  | 'EXPRESSIVE_CRAFT'
+  | 'MODULAR_UTILITY';
+
 interface SpecOf<C extends CraftCategory> {
   category: C;
   construction_type: ConstructionByCategory[C] | 'UNSPECIFIED';
@@ -267,6 +290,21 @@ interface SpecOf<C extends CraftCategory> {
   reference_object: string;
   attributes: AttributesByCategory[C];
   custom_fields: CustomField[];
+  // --- Design intent (category-independent; a taste, not a stored attribute of the product type) ---------------------
+  /** Approved abstract design direction (the concept's design proposition). */
+  design_direction: DesignDirection;
+  /** Optional second direction when the client combines two ("gabung 1 dan 3"). */
+  secondary_direction: DesignDirection;
+  /** The one recognizable but original visual feature of this concept (what will be original). */
+  originality_feature: string;
+  /** The one useful functional advantage. */
+  functional_advantage: string;
+  /** The one visible craftsmanship opportunity. */
+  craftsmanship_detail: string;
+  /** Anti-copying split of any reference: what the client likes (mood, quality, utility)... */
+  reference_likes: string[];
+  /** ...and what must NOT be copied (exact silhouette, signature hardware, logo, monogram, proprietary pattern). */
+  reference_do_not_copy: string[];
 }
 
 export type SmallGoodsSpec = SpecOf<'SMALL_GOODS'>;
@@ -378,6 +416,93 @@ export interface IntakeProgress {
   session_turn_count?: number;
   mockup_render_count?: number;
   silent_parse_count?: number;
+  /** Direction cards last proposed to the client, in the order shown (so "yang kedua" maps to the right one). */
+  proposed_directions?: DesignDirection[];
+}
+
+// ---------------------------------------------------------------------------
+// Design critic & crafter review (Design Intelligence Layer v2, sections 10-12)
+// ---------------------------------------------------------------------------
+
+export type CriticKey =
+  | 'premium_perception'
+  | 'originality'
+  | 'visual_identity'
+  | 'proportion_balance'
+  | 'material_harmony'
+  | 'craftsmanship_value'
+  | 'functional_credibility'
+  | 'view_consistency'
+  | 'commercial_appeal'
+  | 'production_feasibility';
+
+/** 0-100 per criterion. */
+export type CriticScores = Record<CriticKey, number>;
+
+export type CriticDecision = 'APPROVE' | 'REVISE' | 'ESCALATE_TO_CRAFTER';
+
+/**
+ * PENDING_REVIEW   the critic approved the concept; the crafter still signs off with the quotation.
+ * NEEDS_REVIEW     the critic failed it after the automatic revisions: held from the client until the crafter decides.
+ * APPROVED / REJECTED / CHANGES_REQUESTED  the crafter's decision on the dashboard.
+ */
+export type CrafterDesignStatus =
+  | 'NOT_REVIEWED'
+  | 'PENDING_REVIEW'
+  /** New mockups are waiting for the crafter's "Approve & Send to Client" before the client sees them. */
+  | 'PENDING_CRAFTER_APPROVAL'
+  | 'NEEDS_REVIEW'
+  | 'APPROVED'
+  | 'CHANGES_REQUESTED'
+  | 'REJECTED';
+
+export interface CriticReport {
+  critic_scores: CriticScores;
+  /** Gated criteria below the threshold. */
+  failed: CriticKey[];
+  strengths: string[];
+  weaknesses: string[];
+  /** Exact improvement instructions for the next render. */
+  improvement_instructions: string;
+  /** Short visual descriptors the next render MUST show ("softer semi-structured silhouette", "tonal edge paint"). */
+  render_positive?: string[];
+  /** Generic visual elements the next render must NOT show (never brand names). */
+  render_negative?: string[];
+  /** Slots the critic wants regenerated (only these are re-rendered). */
+  views_to_revise: MockupAngle[];
+  /** Decision taken by the code from the scores (the model's own verdict is kept in `model_decision`). */
+  decision: CriticDecision;
+  model_decision?: CriticDecision;
+  /** 'ai': a vision model looked at the images; 'heuristic': spec-level check only (offline / image call failed). */
+  mode: 'ai' | 'heuristic';
+  reviewed_angles: MockupAngle[];
+  revision_number: number;
+  created_at: string;
+  /** Forced failure from the QA test hook (SIMULATE_CRITIC), never in production. */
+  simulated?: boolean;
+}
+
+export interface DesignReview {
+  /** Latest critic scores (mirrors `history.at(-1)`). */
+  critic_scores?: CriticScores;
+  decision?: CriticDecision;
+  /** Automatic revision cycles spent on the current concept (max MAX_CRITIC_REVISIONS). */
+  revision_number: number;
+  crafter_status: CrafterDesignStatus;
+  /** Critic passes on the current concept, oldest first. */
+  history: CriticReport[];
+  /** New renders withheld from the client (critic failed); sent when the crafter approves. */
+  held_angles?: MockupAngle[];
+  /** The client asked for a picture and the critic still failed it: the best pass was sent labelled as a draft. */
+  draft_released_angles?: MockupAngle[];
+  /** Revision number of the best-scoring pass (its renders are the ones kept / sent). */
+  best_pass_revision?: number;
+  crafter_note?: string;
+  /** Critic passes on this order (cost guardrail, see MAX_CRITIC_PASSES_PER_ORDER). */
+  critic_pass_count?: number;
+  /** QA test hook: the next N critic passes are forced to fail (exercises the revision loop offline). */
+  simulate_fail_passes?: number;
+  updated_at?: string;
 }
 
 export interface OrderPayload {
@@ -395,6 +520,8 @@ export interface OrderPayload {
   /** Human-readable reason shown to the crafter when the AI handed over (e.g. the non-standard request). */
   escalation_note?: string;
   craft_category: CraftCategory;
+  /** Workspace scope (`crafter_id` + family), derived from the category and the crafter's workspace. */
+  craft_family: CraftFamily;
   specifications: Specifications;
   material_sourcing: MaterialSourcing;
   pattern_and_bom: PatternAndBom;
@@ -402,6 +529,8 @@ export interface OrderPayload {
   intake?: IntakeProgress;
   /** Background brief, see ClientBrief. */
   client_brief?: ClientBrief;
+  /** Design critic scores, automatic revisions and the crafter's design sign-off. */
+  design_review?: DesignReview;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +559,8 @@ export interface Conversation {
   active_order_id: string;
   /** Consecutive intake turns where the AI could not make progress. */
   confusion_strikes: number;
+  /** Crafter workspace this chat belongs to (one client can talk to several workshops on the same backend). */
+  crafter_id?: string;
   updated_at: string;
 }
 
@@ -447,6 +578,10 @@ export interface InboundWhatsAppEvent {
     url: string;
     mime_type: string;
   };
+  /** Target crafter workspace (multi-crafter routing); default: the backend's default crafter. */
+  crafter_id?: string;
+  /** WhatsApp Cloud API business number id the client wrote to; mapped to a workspace by `wa_phone_number_id`. */
+  to_phone_number_id?: string;
 }
 
 export type WebhookAction =
@@ -488,6 +623,23 @@ export interface CrafterProfile {
   crafter_name: string;
   /** How clients address them, e.g. "Mas", "Mbak", "Kak" ('' for none). */
   crafter_honorific: string;
+  /** Workspace scope: the trades this crafter works in (default derived from `allowed_categories`). */
+  craft_families?: CraftFamily[];
+  /** WhatsApp Cloud API phone number id of this workshop's business number (routes inbound messages here). */
+  wa_phone_number_id?: string;
+  /** Mock dashboard login (server-only; never returned by the API). password_hash = sha256("<username>:<password>"). */
+  login?: { username: string; password_hash: string };
+}
+
+/** One design-critic pass, persisted as an audit log (Firestore `critic_reviews`; the order keeps the latest passes). */
+export interface CriticReviewRecord extends CriticReport {
+  review_id: string;
+  order_id: string;
+  crafter_id: string;
+  craft_category: CraftCategory;
+  craft_family: CraftFamily;
+  /** CLIENT (before the client sees it), BACKGROUND (review angles) or CRAFTER (dashboard render). */
+  source: 'CLIENT' | 'BACKGROUND' | 'CRAFTER';
 }
 
 /** What a client message is, before any spec work. */
@@ -540,6 +692,10 @@ export interface IntakeResult {
   message_intent: MessageIntent;
   /** What the client asked for, in their words, when Gemini judged it outside the workshop (e.g. "meja makan kayu"). */
   out_of_scope_item?: string;
+  /** The latest burst asks for an exact copy / replica of an existing product (answered with the originality notice). */
+  exact_copy_requested?: boolean;
+  /** Designer / product references named anywhere in the chat ("Hermès Birkin"), taste signals only. */
+  references?: string[];
 }
 
 /** TERMINOLOGY / DESIGN / OTHER block the spec card until answered; PRICE_TIMELINE is answered by the crafter's quote. */

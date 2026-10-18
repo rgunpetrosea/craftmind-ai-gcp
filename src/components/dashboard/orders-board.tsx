@@ -8,7 +8,11 @@ import { OrderCard, type OrderRow } from './order-card';
 import { OrderDetail } from './order-detail';
 
 const GROUPS: Array<{ title: string; match: (r: OrderRow) => boolean }> = [
-  { title: 'Needs you', match: (r) => r.order.automation_mode === 'FULL_MANUAL' || r.awaiting_review_count > 0 },
+  {
+    title: 'Needs you',
+    // a takeover, unanswered client messages, or mockups waiting for "Approve & Send to Client"
+    match: (r) => r.order.automation_mode === 'FULL_MANUAL' || r.awaiting_review_count > 0 || (r.order.design_review?.held_angles?.length ?? 0) > 0,
+  },
   { title: 'Pending approval', match: (r) => r.order.session_state === 'PENDING_CRAFTER_APPROVAL' },
   { title: 'Gathering requirements', match: (r) => (['IDLE', 'REQUIREMENT_GATHERING'] as SessionState[]).includes(r.order.session_state) },
   { title: 'Approved', match: (r) => r.order.session_state === 'APPROVED' },

@@ -35,6 +35,8 @@ import type { AutomationMode, ChatMessage, ClientBrief, InventoryItem, MockupAng
 import { cn } from '@/lib/utils/cn';
 import { formatIDR } from '@/lib/utils/format';
 import { BomTable } from './bom-table';
+import { DesignReviewPanel } from './design-review-panel';
+import { MockupApprovalCard } from './mockup-approval-card';
 import { SideBySidePreview } from './side-by-side-preview';
 import { SpecEditor } from './spec-editor';
 
@@ -195,6 +197,20 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
         {flash && <p className="mt-3 rounded-md bg-stone-50 px-3 py-2 text-xs text-stone-600">{flash}</p>}
       </Card>
 
+      {/* Crafter approval gate: AI mockups reach the client only from here */}
+      <MockupApprovalCard
+        order={order}
+        messages={messages}
+        busy={busy === 'design-APPROVE'}
+        onApprove={(note) =>
+          act(
+            'design-APPROVE',
+            () => postJson<{ released?: MockupAngle[] }>(`/api/orders/${orderId}/design-review`, { action: 'APPROVE', note }),
+            (r) => `Approved: ${r.released?.length ?? 0} mockup(s) sent to the client`,
+          )
+        }
+      />
+
       {/* Multi-angle studio mockups + feedback */}
       <Card>
         <CardHeader
@@ -341,6 +357,27 @@ export function OrderDetail({ orderId, onChanged }: { orderId: string; onChanged
           </div>
         </div>
       </Card>
+
+      {/* Design Intelligence Layer v2: direction, originality, critic scores, crafter sign-off */}
+      <DesignReviewPanel
+        key={`${order.order_id}-${s.design_direction}-${s.originality_feature}`}
+        order={order}
+        busy={busy}
+        onAction={(action, payload) =>
+          act(
+            `design-${action}`,
+            () => postJson<{ released?: MockupAngle[] }>(`/api/orders/${orderId}/design-review`, { action, ...payload }),
+            (r) =>
+              ({
+                APPROVE: r.released?.length ? `Concept approved: ${r.released.length} held render(s) sent to the client` : 'Concept approved',
+                REJECT: 'Concept rejected',
+                REGENERATE: 'Re-rendered with your note and re-scored by the design critic',
+                RECHECK: 'Design critic re-ran',
+                UPDATE_DESIGN: 'Design intent saved (re-render to apply it to the mockups)',
+              })[action],
+          )
+        }
+      />
 
       {/* Background brief: what the silent parser has learned, in the client's own terms */}
       {order.client_brief && Object.values(order.client_brief).some((v) => v.trim()) && (

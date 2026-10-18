@@ -15,6 +15,7 @@ import type {
   Specifications,
 } from '@/lib/types';
 import { renderConceptSvg, renderDemoSketchSvg } from '@/lib/utils/svg';
+import { WOOD_WORKSPACE_ID } from '@/lib/workspaces';
 
 /** Demo orders (one per main category) so the in-memory dashboard is populated on first load. */
 
@@ -120,7 +121,8 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
   ];
 
   // 4. Teak dining table → furniture schema (no leather fields at all), pending approval.
-  const table = createDraftOrder('+6281234567004', 'Maya Kusuma');
+  // (furniture belongs to the wood workspace)
+  const table = createDraftOrder('+6281234567004', 'Maya Kusuma', 'CUSTOM_GENERIC', { crafterId: WOOD_WORKSPACE_ID, family: 'FURNITURE' });
   table.order_id = 'ORD-DEMO-FUR01';
   table.created_at = minutesAgo(180);
   table.session_state = 'PENDING_CRAFTER_APPROVAL';
@@ -148,6 +150,7 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
     active_order_id: o.order_id,
     confusion_strikes: 0,
     updated_at: o.created_at,
+    crafter_id: o.crafter_id,
   });
 
   return [

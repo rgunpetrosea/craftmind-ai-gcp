@@ -1,5 +1,6 @@
 import { Type, type Schema } from '@google/genai';
 import { ALL_CONSTRUCTIONS, CATEGORIES, schemaOf } from '@/lib/spec/catalog';
+import { DIRECTION_IDS } from '@/lib/spec/directions';
 import type { AnyField } from '@/lib/spec/fields';
 import type { CraftCategory } from '@/lib/types';
 
@@ -96,6 +97,36 @@ export function extractionSchema(category: CraftCategory): Schema {
       description: 'The reference used when REFERENCE_BASED, as precise as the client allows, e.g. "Hermès Birkin 30", "iPad Air 11 inch". Empty otherwise.',
     },
     attributes: obj(attributes, `${schema.label} attributes only.`),
+    design: obj(
+      {
+        design_direction: {
+          type: Type.STRING,
+          enum: ['UNSPECIFIED', ...DIRECTION_IDS],
+          description:
+            'Abstract design direction the client CHOSE (by name, by number from the directions the assistant proposed, "gabung 1 dan 3" → the first, ' +
+            'or agreeing to the recommendation). UNSPECIFIED until they choose; a vague word like "elegan" is not a choice. Never infer it from a brand name alone.',
+        },
+        secondary_direction: { type: Type.STRING, enum: ['UNSPECIFIED', ...DIRECTION_IDS], description: 'Second direction when the client combines two; else UNSPECIFIED.' },
+        originality_feature: {
+          type: Type.STRING,
+          description: "The client's OWN idea for a distinctive original feature (e.g. \"flap melengkung dengan kunci kayu\"). Empty if they gave none; never invent one.",
+        },
+        reference_likes: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description:
+            'When the client names a designer brand / product or sends a reference photo: what they LIKE about it (mood, structure, quality, utility), in short English phrases. Empty array otherwise.',
+        },
+        reference_do_not_copy: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description:
+            "The reference's protected identity that must NOT be copied (exact silhouette, signature closure or hardware, logo, monogram, proprietary pattern), in short English phrases. Empty array otherwise.",
+        },
+        exact_copy_requested: { type: Type.BOOLEAN, description: 'True only if the client asks for an exact copy / replica / "persis" of an existing product ("ga mau persis" is false).' },
+      },
+      'Design intent. A brand name is a taste signal only: never a direction, never something to replicate.',
+    ),
     custom_fields: {
       type: Type.ARRAY,
       description: 'Client requests that NO attribute above covers (e.g. "hidden AirTag pocket", "ring size 7"). Empty array if none.',

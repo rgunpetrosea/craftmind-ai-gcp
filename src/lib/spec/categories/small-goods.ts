@@ -3,6 +3,8 @@ import { parseCount, parseLining, parseStitchPattern, parseThreadMaterial, parse
 import type { SmallGoodsAttributes } from '@/lib/types';
 import {
   dimensionsField,
+  directionTopic,
+  visualReferenceTopic,
   embossingFields,
   leatherEdgeField,
   leatherField,
@@ -227,10 +229,12 @@ export const SMALL_GOODS: CategorySchema<'SMALL_GOODS'> = {
       applies_to: [...WALLETS],
       deferrable: true,
     },
+    directionTopic<'SMALL_GOODS'>(),
     { id: 'personalization', label: 'Emboss', ask: 'mau ditambah inisial nama atau logo di bagian luarnya', required: false, fields: ['embossing_type'], deferrable: true },
     { id: 'zipper', label: 'Sleting', ask: 'aksesoris logam resletingnya mau warna emas, silver, atau hitam', required: false, fields: ['zipper'], applies_to: ['ZIP_AROUND_LONG_WALLET'], deferrable: true },
     { id: 'edge', label: 'Pinggiran', ask: 'pinggiran kulitnya mau dibuat licin mengkilap, dicat rapi senada, atau dibiarkan natural', required: false, fields: ['edge_finish'], deferrable: true },
     { id: 'thread', label: 'Benang', ask: 'jahitannya mau warna senada biar halus, atau kontras biar kelihatan', required: false, fields: ['thread_color', 'thread_material'], deferrable: true },
-    { id: 'lining', label: 'Lining', ask: 'bagian dalamnya mau dilapis bahan halus, atau dibiarkan kulit polos biar lebih tipis', required: false, fields: ['lining'], applies_to: ['BIFOLD_WALLET', 'LONG_BIFOLD_WALLET', 'TRIFOLD_WALLET', 'ACCORDION_WALLET', 'ZIP_AROUND_LONG_WALLET', 'PASSPORT_COVER'], deferrable: true },
+    { id: 'lining', label: 'Lining', ask: 'bagian dalamnya mau dilapis bahan halus, atau dibiarkan kulit polos biar lebih tipis', required: true, fields: ['lining'], applies_to: ['BIFOLD_WALLET', 'LONG_BIFOLD_WALLET', 'TRIFOLD_WALLET', 'ACCORDION_WALLET', 'ZIP_AROUND_LONG_WALLET', 'PASSPORT_COVER'], deferrable: true },
+    visualReferenceTopic<'SMALL_GOODS'>('detail jahitan, susunan slot kartu, atau finishing pinggiran'),
   ],
 };

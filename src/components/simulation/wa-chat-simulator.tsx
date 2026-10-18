@@ -8,6 +8,7 @@ import { postJson, usePoll } from '@/lib/hooks/use-poll';
 import { isClassified, isTopicFilled, normalizeSpecifications, schemaOf, topicsFor } from '@/lib/spec/catalog';
 import type { ChatMessage, Conversation, InboundWhatsAppEvent, OrderPayload } from '@/lib/types';
 import { cn } from '@/lib/utils/cn';
+import { DEMO_WORKSPACES, LEATHER_WORKSPACE_ID } from '@/lib/workspaces';
 import { WaText } from './wa-text';
 
 interface SessionResponse {
@@ -15,6 +16,8 @@ interface SessionResponse {
   order: OrderPayload | null;
   messages: ChatMessage[];
   ai_pending: boolean;
+  /** Concept render + design-critic job running in the background (the chat stays open). */
+  concept_pending?: boolean;
 }
 
 const QUICK_MESSAGES = [
@@ -27,9 +30,12 @@ const QUICK_MESSAGES = [
 ];
 
 interface ScenarioStep {
-  as: 'CLIENT' | 'CRAFTER';
+  /** API: a crafter-dashboard call (":order" in path / body is the current order id). */
+  as: 'CLIENT' | 'CRAFTER' | 'API';
   text: string;
   phase: 'setup' | 'scenario' | 'followup';
+  path?: string;
+  body?: unknown;
 }
 
 interface Scenario {
@@ -107,15 +113,18 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
   const [notice, setNotice] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [step, setStep] = useState(0);
+  /** Which workshop the simulated client is chatting with (multi-crafter demo). */
+  const [workspace, setWorkspace] = useState(LEATHER_WORKSPACE_ID);
+  const wsQuery = `crafter_id=${encodeURIComponent(workspace)}`;
   const { data: scenarioData } = usePoll<{ scenarios: Scenario[] }>('/api/scenarios', 60 * 60 * 1000);
-  const { data: profileData } = usePoll<{ profile: { workshop_name: string } }>('/api/crafter-profile', 30 * 1000);
+  const { data: profileData } = usePoll<{ profile: { workshop_name: string } }>(`/api/crafter-profile?workspace_id=${encodeURIComponent(workspace)}`, 30 * 1000);
   const workshop = profileData?.profile.workshop_name ?? 'Workshop';
   const initials = workshop.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
 
-  const { data, refresh } = usePoll<SessionResponse>(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}`, 1500);
+  const { data, refresh } = usePoll<SessionResponse>(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}&${wsQuery}`, 1500);
   const order = data?.order ?? null;
   const messages = data?.messages ?? [];
   const aiOn = !order || order.automation_mode === 'AI_COPILOT';
@@ -132,6 +141,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
         phone_number: phone,
         client_name_wa: name,
         sender,
+        crafter_id: workspace,
         ...event,
       });
       setNotice(
@@ -161,7 +171,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
     setScenario(sc);
     setStep(0);
     if (!sc) return;
-    await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}`, { method: 'DELETE' });
+    await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}&${wsQuery}`, { method: 'DELETE' });
     setNotice(`${sc.id}: ${sc.name}. Kirim langkah satu per satu, tunggu balasan AI di antaranya.${sc.needs_attachment ? ' Skenario asli juga mengirim foto/sketsa; lampirkan lewat ikon gambar.' : ''}`);
     await refresh();
   }
@@ -171,6 +181,21 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
     const turn = scenario.steps[step];
     if (!turn) return;
     setStep(step + 1);
+    if (turn.as === 'API') {
+      if (!order || !turn.path) return setNotice('Dashboard step needs an order: send the previous messages first');
+      const fill = (s: string) => s.replaceAll(':order', order.order_id);
+      setBusy(true);
+      try {
+        await postJson(fill(turn.path), JSON.parse(fill(JSON.stringify(turn.body ?? {}))));
+        setNotice(`Crafter dashboard: ${turn.text}`);
+        await refresh();
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     await send({ text: turn.text }, turn.as);
   }
 
@@ -201,13 +226,36 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
   async function resetChat() {
     setScenario(null);
     setStep(0);
-    await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}`, { method: 'DELETE' });
+    await fetch(`/api/webhook/whatsapp?phone=${encodeURIComponent(phone)}&${wsQuery}`, { method: 'DELETE' });
     setNotice('Started a new draft order');
     await refresh();
   }
 
   return (
     <div className="flex h-[calc(100dvh-7rem)] max-h-[900px] min-h-[600px] w-full max-w-md flex-col overflow-hidden rounded-[28px] border-8 border-stone-900 bg-wa-wallpaper shadow-2xl">
+      {/* Workspace switcher: which workshop the simulated client is writing to */}
+      <div role="tablist" aria-label="Workshop" className="flex gap-1 bg-stone-900 px-3 pb-2 pt-1">
+        {DEMO_WORKSPACES.map((w) => (
+          <button
+            key={w.id}
+            role="tab"
+            aria-selected={workspace === w.id}
+            onClick={() => {
+              if (workspace === w.id) return;
+              setWorkspace(w.id);
+              setScenario(null);
+              setStep(0);
+              setNotice(`Now chatting with ${w.label} (${w.family === 'FURNITURE' ? 'furniture' : 'leather'} workspace)`);
+            }}
+            className={cn(
+              'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition',
+              workspace === w.id ? 'bg-white text-stone-900' : 'text-stone-300 hover:bg-white/10',
+            )}
+          >
+            {w.label}
+          </button>
+        ))}
+      </div>
       {/* Header */}
       <div className="bg-wa-header px-4 py-3 text-white">
         <div className="flex items-center gap-3">
@@ -256,10 +304,16 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
         {groupAlbums(messages).map((g) => (
           g.length > 1 ? <Album key={g[0].id} messages={g} /> : <Bubble key={g[0].id} message={g[0]} />
         ))}
-        {data?.ai_pending && (
+        {data?.ai_pending ? (
           <div className="flex w-fit items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs text-stone-500 shadow-sm">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> AI agents working…
           </div>
+        ) : (
+          data?.concept_pending && (
+            <div className="flex w-fit items-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-[11px] text-stone-500 shadow-sm" title="Rendering and design-critic review run in the background; the chat stays open">
+              <Loader2 className="h-3 w-3 animate-spin text-leather-500" /> Menyiapkan gambar konsep (dicek Design Critic)… chat tetap bisa lanjut
+            </div>
+          )
         )}
       </div>
 
@@ -289,7 +343,7 @@ export function WaChatSimulator({ defaultPhone = '+6281299990001', defaultName =
                 className="w-full rounded-lg bg-white px-3 py-1.5 text-left text-[11px] text-wa-header shadow-sm ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-50"
               >
                 <span className="font-semibold">
-                  {next.as === 'CRAFTER' ? 'Kirim sebagai crafter' : 'Kirim pesan'} {step + 1}/{turns.length} ({PHASE_LABEL[next.phase]}):
+                  {next.as === 'API' ? 'Aksi dashboard crafter' : next.as === 'CRAFTER' ? 'Kirim sebagai crafter' : 'Kirim pesan'} {step + 1}/{turns.length} ({PHASE_LABEL[next.phase]}):
                 </span>{' '}
                 {next.text}
               </button>

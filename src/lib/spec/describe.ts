@@ -1,5 +1,6 @@
 import { constructionLabel, describeFields, schemaOf } from '@/lib/spec/catalog';
 import { dimensionNote } from '@/lib/spec/dimensions';
+import { directionDef, directionFeel, isDirectionSet } from '@/lib/spec/directions';
 import type { Specifications } from '@/lib/types';
 
 /** Client-facing text built from the active category's schema: only filled, relevant fields appear. */
@@ -30,10 +31,37 @@ export function specCardText(clientName: string, s: Specifications, opts: { upda
   return [
     opts.updated ? `Noted kak ${clientName}, ringkasannya sudah kami perbarui:` : `Noted kak ${clientName}, ini ringkasan pesanannya ya:`,
     '',
-    [`• Model: ${modelLine(s)} (${schemaOf(s.category).label_id})`, ...specLines(s)].join('\n'),
+    [`• Model: ${modelLine(s)} (${schemaOf(s.category).label_id})`, ...designLines(s), ...specLines(s)].join('\n'),
     '',
     'Crafter kami cek dulu desain dan harganya. Nanti penawarannya kami kirim di sini.',
   ].join('\n');
+}
+
+/** "• Arah desain: ..." / "• Ciri original: ..." lines of the spec card (only once a direction is chosen). */
+export function designLines(s: Specifications): string[] {
+  const d = directionDef(s.design_direction);
+  if (!d) return [];
+  const sec = isDirectionSet(s.secondary_direction) && s.secondary_direction !== s.design_direction ? directionFeel(s.secondary_direction) : '';
+  return [`• Nuansa desain: ${d.feel}${sec ? ` + ${sec}` : ''}`, ...(s.originality_feature.trim() ? [`• Detail khas: ${s.originality_feature.trim()}`] : [])];
+}
+
+/**
+ * Concept presentation when the crafter releases a reviewed concept (Design Intelligence Layer v2, section 12): the
+ * direction, the original feature, key materials, the practical benefit and what is still pending; never a guarantee.
+ */
+export function conceptPresentation(s: Specifications, pending: string[] = []): string {
+  const d = directionDef(s.design_direction);
+  return [
+    '*Konsep desain yang sudah dicek crafter kami*',
+    d ? `• Nuansa desain: ${d.feel} (${d.pitch})` : null,
+    s.originality_feature.trim() ? `• Detail khas: ${s.originality_feature.trim()}` : null,
+    primaryMaterial(s) ? `• Material utama: ${primaryMaterial(s)}` : null,
+    s.functional_advantage.trim() ? `• Keunggulan: ${s.functional_advantage.trim()}` : null,
+    pending.length ? `• Masih perlu dikonfirmasi: ${pending.join(', ')}` : null,
+    'Gambar ini konsep visual, bukan jaminan hasil produksi final.',
+  ]
+    .filter((l) => l !== null)
+    .join('\n');
 }
 
 /** Primary material as written on the order (leather, wood, metal...). */

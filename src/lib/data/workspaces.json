@@ -1,0 +1,30 @@
+[
+  {
+    "crafter_id": "crafter-leather-01",
+    "workshop_name": "CraftMind Leather Studio",
+    "allowed_categories": ["wallets", "card_holders", "bags", "belts", "watch_straps", "shoes"],
+    "primary_material": "genuine leather / leathergoods",
+    "contact_whatsapp": "+6281234500000",
+    "crafter_name": "Fendy",
+    "crafter_honorific": "Mas",
+    "craft_families": ["LEATHER"],
+    "login": {
+      "username": "leather_artisan",
+      "password_hash": "ae1cb79aacc938337b3236e0a1f76fff35639cda431f55a7e04c31f4c816f59b"
+    }
+  },
+  {
+    "crafter_id": "crafter-wood-02",
+    "workshop_name": "CraftMind Wood Studio",
+    "allowed_categories": ["furniture", "home_decor"],
+    "primary_material": "solid wood & metal furniture",
+    "contact_whatsapp": "+6281234500002",
+    "crafter_name": "Bima",
+    "crafter_honorific": "Mas",
+    "craft_families": ["FURNITURE"],
+    "login": {
+      "username": "wood_artisan",
+      "password_hash": "b0c1e08aa2d8a6356c929973cf84032b74a195813836ea08198eb0cabe20fdb3"
+    }
+  }
+]

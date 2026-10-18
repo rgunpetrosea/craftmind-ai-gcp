@@ -40,6 +40,7 @@ const LEATHER_TYPES: Array<[RegExp, string]> = [
   [/crazy[\s-]?horse/i, 'Crazy Horse'],
   [/nappa|napa/i, 'Nappa'],
   [/saffiano/i, 'Saffiano'],
+  [/calf\s?skin|box ?calf|kulit anak sapi/i, 'Calfskin'],
   [/suede|beludru/i, 'Suede'],
   [/sintetis|synthetic|pu leather|kulit imitasi/i, 'Synthetic leather'],
 ];

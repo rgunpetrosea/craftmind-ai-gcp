@@ -37,30 +37,43 @@ function parseCsv(text) {
 const CATEGORY = { bespoke_bag: 'BAG', bespoke_wallet: 'SMALL_GOODS', bespoke_shoes: 'FOOTWEAR', custom_furniture: 'FURNITURE', furniture: 'FURNITURE' };
 const DONE = 'Terserah mas untuk detail lainnya. Itu saja kak';
 const client = (text, extra = {}) => ({ as: 'CLIENT', text, ...extra });
-const crafter = (text) => ({ as: 'CRAFTER', text });
+/** A crafter-dashboard API call; ":order" in the path or body is replaced with the scenario's order id. */
+const api = (path, body, extra = {}) => ({ as: 'API', path, body, text: `${path} ${JSON.stringify(body)}`, ...extra });
+/** Crafter dashboard: "Approve & Send to Client" once the background render job has staged the mockups. */
+const APPROVE = api('/api/orders/:order/design-review', { action: 'APPROVE', note: 'Konstruksi sudah kami cek' }, { wait_for_renders: true });
 
+// Design Intelligence Layer v2, section 14 test matrix. DONE answers "terserah" to whatever is open, which takes the
+// recommended design direction when the direction cards were the last question.
 const SCRIPT = {
-  'SCN-01': { followups: [DONE, DONE] },
-  'SCN-02': { followups: ['Kulitnya Epsom hitam aja mas', DONE, DONE] },
-  'SCN-03': { followups: ['Kulitnya veg-tan coklat 1.6mm ya mas', DONE, DONE] },
-  'SCN-04': { followups: ['Ukurannya 11.5 x 9 cm, tebal 1.2 cm ya mas', DONE, DONE] },
-  'SCN-05': { followups: [DONE, DONE] },
-  'SCN-06': { setup: [client('Mau bikin dompet bifold kulit ya mas')] },
-  'SCN-07': {
-    // A real request, then debounced turns with NO design context (corrections like "salah" / "bukan gitu" are revisions
-    // and reset the counter): two in the setup, the third is the CSV message → loop limit (3) reached on the CSV turn.
-    setup: [client('Mau bikin tas selempang kulit pake flap ya'), client('hmm'), client('wkwkwk')],
+  // vague: the form factor, size and leather come first, then the direction cards (and only then a picture)
+  'SCN-01': { followups: ['Model tote aja kak, biasanya bawa laptop 14 inch, kulitnya veg-tan coklat', DONE, DONE] },
+  'SCN-02': { followups: [DONE, DONE] },
+  'SCN-03': { followups: ['Biasanya disimpan di saku celana, bawa 6 kartu sama uang kertas', DONE, DONE] },
+  'SCN-04': { followups: [DONE, DONE] },
+  // the critic is forced to fail its next pass, so the draft rendered on the CSV turn goes through one automatic revision
+  'SCN-05': {
+    setup: [client('Halo kak, mau bikin tas kulit'), api('/api/orders/:order/design-review', { action: 'SIMULATE_CRITIC', fail_passes: 1 })],
+    followups: [DONE, DONE],
   },
-  'SCN-08': {
+  'SCN-06': { followups: ['Epsom hitam aja kak, disimpan di saku celana, bawa 6 kartu dan uang kertas', DONE, DONE] },
+  'SCN-07': { setup: [client('Mau bikin dompet bifold kulit ya mas')] },
+  'SCN-08': { followups: ['Ukurannya 11.5 x 9 cm, tebal 1.2 cm ya mas', DONE, DONE] },
+  // spec locked and rendered, then the crafter overrides angle 2's shot, requests a construction change and approves
+  'SCN-09': {
     setup: [
-      client('Mau tas selempang 30x10x20 cm kulit veg-tan coklat 1.6mm'),
+      client('Mau card holder 9.5x7cm kulit Epsom hitam, gaya modern minimalis ya'),
       client(DONE, { if_not_quoted: true }),
       client(DONE, { if_not_quoted: true }),
-      crafter('Halo kak, saya Fendy crafternya. Penawarannya saya cek dulu ya'),
+      api('/api/ai/mock-generator', { order_id: ':order', angle_index: 2, custom_angle_prompt: '45-degree view with the card slots fanned out, shallow depth of field' }),
+      api('/api/orders/:order/design-review', { action: 'REGENERATE', angles: ['ANGLE_1'], note: 'Ganti tepi jadi turned edge yang lebih tajam' }),
+      api('/api/orders/:order/design-review', { action: 'APPROVE', note: 'Konstruksi turned edge sudah sesuai' }),
     ],
   },
-  'SCN-09': { followups: [DONE, DONE] },
-  'SCN-10': { setup: [client('Mau bikin tote bag kulit veg-tan coklat 1.6mm, yang muat laptop 14 inch')], followups: [DONE, DONE] },
+  'SCN-10': { followups: [DONE, DONE] },
+  // crafter approval gate: the mockups are staged, then the crafter approves them on the dashboard
+  'SCN-11': { followups: [DONE, DONE, APPROVE] },
+  'SCN-12': { followups: [DONE, DONE, APPROVE] },
+  'SCN-13': { followups: [DONE, DONE, APPROVE] },
 };
 
 const [header, ...rows] = parseCsv(csv);
@@ -93,12 +106,16 @@ const scenarios = rows.map((r) => {
       automation_mode: get(r, 'expected_automation_mode') || null,
       escalation_reason: !escalation || escalation === 'NONE' ? null : escalation,
       debounce_bypass: /bypass/i.test(notes) || /bypass/i.test(get(r, 'scenario_name')),
+      // Design Intelligence Layer v2 assertions, "CHECK" or "CHECK:argument", ";"-separated (see scripts/run-scenarios.mjs)
+      design_checks: get(r, 'expected_design_checks').split(';').map((c) => c.trim()).filter(Boolean),
     },
-    expected_summary: [get(r, 'expected_dimension_mode'), refOrDim, get(r, 'expected_material_status'), get(r, 'expected_automation_mode'), escalation].join(' · '),
+    expected_summary: [get(r, 'expected_dimension_mode'), refOrDim, get(r, 'expected_material_status'), get(r, 'expected_automation_mode'), escalation, get(r, 'expected_design_checks')]
+      .filter(Boolean)
+      .join(' · '),
     steps: [
       ...(script.setup ?? []).map((s) => ({ ...s, phase: 'setup' })),
       { as: 'CLIENT', text: get(r, 'client_raw_message'), phase: 'scenario' },
-      ...(script.followups ?? []).map((t) => ({ as: 'CLIENT', text: t, phase: 'followup' })),
+      ...(script.followups ?? []).map((t) => (typeof t === 'string' ? { as: 'CLIENT', text: t, phase: 'followup' } : { ...t, phase: 'followup' })),
     ],
   };
 });

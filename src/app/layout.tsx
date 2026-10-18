@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'CraftMind AI — ArtisanOS',
-  description: 'WhatsApp inquiries → structured specs, studio mockups, pattern BOM and quotations for bespoke leathercraft.',
+  title: 'CraftMind AI — Praxium',
+  description: 'WhatsApp inquiries → structured specs, studio mockups, BoM breakdowns and quotations for bespoke leather and furniture workshops, with crafter approval.',
 };
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

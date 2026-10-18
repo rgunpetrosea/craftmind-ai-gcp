@@ -4,7 +4,9 @@ import { currentAngles, finalSpecOf, renderMockupAngles, reusableRender } from '
 import { angleChoices, angleDef, angleForRequest, angleFromId, anglesFromIds, defaultMockupAngles, MOCKUP_ANGLES } from '@/lib/spec/angles';
 import { isBuiltInFurniture } from '@/lib/spec/categories/furniture';
 import { isClassified, missingRequired } from '@/lib/spec/catalog';
-import { aiRenderCap, mockupCapMessage } from '@/lib/spec/guardrails';
+import { aiRenderCap, APPROVAL_PENDING_MESSAGE, mockupCapMessage, renderTemplate } from '@/lib/spec/guardrails';
+import { isDesignCriticEnabled } from '@/lib/agents/critic-agent';
+import { reviewConcept, stageForApproval } from '@/lib/design-review';
 import type { CrafterProfile, IntakeProgress, MockupAngle, MockupRender, Specifications } from '@/lib/types';
 import { isAiBlocked } from '@/lib/utils/takeover';
 import { notifyCrafter, sendToClient } from '@/lib/whatsapp';
@@ -74,14 +76,55 @@ export interface MockupToolArgs {
   adjustment?: unknown;
   /** The client's words when they asked for a picture: an explicit view ("posisi terbuka") outranks the model's pick. */
   requestText?: string;
+  /**
+   * The client explicitly asked to see a picture ("kirim gambarnya", "langsung gambarin"): if the critic still fails the
+   * concept after its revisions, the best-scoring pass is sent as a draft instead of nothing (crafter review stays open).
+   */
+  clientAsked?: boolean;
 }
 
 export type MockupToolResult =
   | { status: 'SENT'; angles: MockupAngle[]; generated: MockupAngle[]; reused: MockupAngle[]; counted: boolean }
   | { status: 'CAPPED'; reused: MockupAngle[] }
+  /** The design critic failed the new renders after its automatic revisions: withheld for the crafter's review. */
+  | { status: 'HELD'; held: MockupAngle[]; reused: MockupAngle[] }
   | { status: 'NOT_READY' }
   | { status: 'FAILED' }
   | { status: 'SKIPPED_TAKEOVER' };
+
+/**
+ * Concept jobs: generate_mockup_tool runs in the BACKGROUND, one job at a time per order, so the render + design-critic
+ * loop (up to 3 vision passes and 2 re-renders, minutes with a real image model) never holds the WhatsApp turn open:
+ * the client keeps chatting, and the images / the hold message arrive when the job ends. `isConceptRendering()` drives
+ * the "preparing the concept" status (separate from "AI agents working").
+ */
+const globalForJobs = globalThis as unknown as { __craftmindConceptJobs?: Map<string, Promise<unknown>> };
+const conceptJobs = (globalForJobs.__craftmindConceptJobs ??= new Map<string, Promise<unknown>>());
+
+export function isConceptRendering(orderId: string): boolean {
+  return conceptJobs.has(orderId);
+}
+
+export function enqueueMockupTool(
+  orderId: string,
+  profile: CrafterProfile,
+  args: MockupToolArgs = {},
+  after?: (result: MockupToolResult) => void | Promise<void>,
+): void {
+  const previous = conceptJobs.get(orderId) ?? Promise.resolve();
+  const job: Promise<unknown> = previous
+    .catch(() => undefined)
+    .then(() => executeGenerateMockupTool(orderId, profile, args))
+    .then(async (result) => {
+      await after?.(result);
+      return result;
+    })
+    .catch((err) => console.error(`[generate_mockup_tool] background job for ${orderId} failed:`, err))
+    .finally(() => {
+      if (conceptJobs.get(orderId) === job) conceptJobs.delete(orderId);
+    });
+  conceptJobs.set(orderId, job);
+}
 
 /** Angles of a `batch_job` ([{ angle, derived_from }]) and whether any of them is derived from the master shot. */
 export function parseBatchJob(job: unknown): { angles: MockupAngle[]; derived: boolean } {
@@ -156,14 +199,13 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
 
   const used = order.intake?.mockup_render_count ?? 0;
   const capped = toGenerate.length > 0 && used >= aiRenderCap(spec);
-  const sendable = targets.filter((a) => !(capped && toGenerate.includes(a)));
-  const intro = !toGenerate.length || capped
-    ? 'Ini gambarnya ya kak.'
-    : used === 0 && !current.size
-      ? 'Ini gambaran awal desainnya ya kak. Kalau ada yang kurang pas, bilang aja biar kami sesuaikan.'
-      : 'Ini gambar yang sudah disesuaikan ya kak. Kalau masih ada yang kurang pas, bilang aja.';
+  // Only renders the crafter has already approved go straight to the client (re-sent, no image call); everything new or
+  // still awaiting approval is staged on the dashboard below.
+  const pendingApproval = new Set(order.design_review?.held_angles ?? []);
+  const sendable = reused.filter((a) => !pendingApproval.has(a));
+  const intro = 'Ini gambarnya ya kak.';
 
-  // Images go out in slot order as they become ready; a reused leading angle is sent before rendering starts.
+  // Approved images go out in slot order.
   const ready = new Map(reused.map((a) => [a, current.get(a)!] as const));
   const sent: MockupAngle[] = [];
   let chain = Promise.resolve();
@@ -185,17 +227,16 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
   await flush();
 
   let generated: MockupRender[] = [];
+  // Design critic (optional, DESIGN_CRITIC=on): scores and revises the new renders before the crafter sees them
+  const critic = isDesignCriticEnabled();
+  let criticFailed = false;
   if (toGenerate.length && !capped) {
     try {
       generated = await renderMockupAngles(orderId, {
         angles: toGenerate,
         adjustment: adjustment && `Client's requested change (their own words): "${adjustment}"`,
-        onRender: async (r) => {
-          if (!sendable.includes(r.angle)) return;
-          ready.set(r.angle, r);
-          await flush();
-        },
       });
+      if (critic) criticFailed = (await reviewConcept(orderId, { angles: toGenerate, source: 'CLIENT' })).held;
     } catch (err) {
       console.error(`[generate_mockup_tool] render for ${orderId} failed:`, err);
       const latest = await store.getOrder(orderId);
@@ -224,5 +265,18 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
     return { status: 'CAPPED', reused: sent };
   }
   if (isAiBlocked(latest)) return { status: 'SKIPPED_TAKEOVER' };
+
+  // Crafter approval (no auto-submit): every new render, and any earlier one still unapproved, waits on the dashboard for
+  // "Approve & Send to Client"; the client hears that the draft is being reviewed for construction feasibility.
+  const staged = [...toGenerate, ...reused.filter((a) => pendingApproval.has(a))];
+  if (staged.length) {
+    await stageForApproval(orderId, staged, criticFailed ? 'NEEDS_REVIEW' : 'PENDING_CRAFTER_APPROVAL');
+    const fresh = await store.getOrder(orderId);
+    if (fresh && !isAiBlocked(fresh)) {
+      await sendToClient(fresh, 'AI', renderTemplate(APPROVAL_PENDING_MESSAGE, profile));
+      if (!criticFailed) await notifyCrafter(fresh, `Draft mockup (${staged.length} tampilan) siap ditinjau. Setujui & kirim ke klien dari dashboard.`);
+    }
+    return { status: 'HELD', held: staged, reused: sent };
+  }
   return { status: 'SENT', angles: sent, generated: generated.map((r) => r.angle), reused, counted };
 }
