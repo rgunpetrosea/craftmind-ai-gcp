@@ -24,7 +24,7 @@ const CRAFTER_NAMES = (process.env.CRAFTER_NAMES ?? 'fendy')
 const KEYWORD_PATTERN = new RegExp(`\\b(${ESCALATION_KEYWORDS.join('|')})`, 'i');
 // "ngomong sama ...", "bicara langsung", "mau telepon", "hubungi ..." : asking for a person, however they phrase it.
 // ("stop kontak dengan USB" is a power socket, not a request for a person)
-const HUMAN_INTENT_PATTERN = /\b(ngomong|bicara|berbicara|ngobrol|chat|telepon|telpon|hubungi|(?<!stop\s?)kontak)\s+(sama|dengan|langsung|ke|dgn|sm)\b/i;
+const HUMAN_INTENT_PATTERN = /\b(ngomong|bicara|berbicara|ngobrol|chat|telepon|telpon|hubungi|(?<!stop\s?)kontak)\s+(sama|dengan|langsung|ke|dgn|sm)\b|\b(talk|speak|chat)\s+(to|with)\s+(a\s+|the\s+|someone|somebody|human|person|real|owner|maker)|\b(real|actual)\s+(person|human)\b|\b(human|person)\s+(please|agent)\b/i;
 const NAME_PATTERN = CRAFTER_NAMES.length ? new RegExp(`\\b(?:mas|pak|bu|mbak|kak)\\s+(${CRAFTER_NAMES.join('|')})\\b`, 'i') : null;
 
 /**
@@ -43,15 +43,15 @@ export const CONFUSION_STRIKE_LIMIT = Number(process.env.CONFUSION_STRIKE_LIMIT 
 
 /** Templates: `{{active_crafter_name}}` is bound to the order's crafter profile (`renderTemplate` in spec/guardrails.ts). */
 export const HANDOFF_MESSAGES: Record<EscalationReason | 'NON_STANDARD', string> = {
-  CLIENT_REQUEST: 'Baik kak, chatnya kami teruskan ke {{active_crafter_name}}. Mohon ditunggu sebentar ya.',
-  CONFUSION_RULE: 'Mohon maaf kak, biar nggak salah paham, {{active_crafter_name}} langsung bantu kakak di sini ya.',
+  CLIENT_REQUEST: "Of course, I'm passing the chat to {{active_crafter_name}}. They will be with you shortly.",
+  CONFUSION_RULE: "Sorry for the confusion. To make sure we get this right, {{active_crafter_name}} will help you directly here.",
   CRAFTER_OVERRIDE: '',
   /** Profile-specific texts for these two come from spec/guardrails.ts (sessionCapMessage / loopHandoverMessage). */
   SESSION_LIMIT: '',
   /** Discount far below the floor price: text from spec/guardrails.ts (negotiationHandoverMessage). */
   PRICE_NEGOTIATION: '',
   /** Non-standard request (escalated with reason CLIENT_REQUEST). */
-  NON_STANDARD: 'Untuk permintaan ini perlu dicek langsung oleh {{active_crafter_name}} ya kak. Kami teruskan sekarang, mohon ditunggu sebentar.',
+  NON_STANDARD: "This request needs to be checked directly by {{active_crafter_name}}. I'm passing it on now; they will be with you shortly.",
 };
 
 /** Returns the trigger that matched (keyword, phrase or crafter name), or null. */

@@ -106,11 +106,11 @@ export function applyWallRuns(raw: Specifications, clientText: string): Specific
 export function dimensionNote(spec: Specifications): string {
   switch (spec.dimension_mode) {
     case 'REFERENCE_BASED':
-      return `estimasi dari referensi ${spec.reference_object}`;
+      return `estimated from ${spec.reference_object}`;
     case 'PENDING_SITE_VISIT':
-      return 'menunggu survei ukur di lokasi; ukuran sementara';
+      return 'awaiting on-site measurement; provisional size';
     case 'EXACT_CM':
-      return 'ukuran dari klien';
+      return 'size from client';
     default:
       return '';
   }

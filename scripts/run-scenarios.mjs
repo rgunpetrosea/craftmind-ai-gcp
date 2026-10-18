@@ -152,7 +152,7 @@ function designCheck(token, order, ctx, check) {
       return check(name, want.includes(first), `recommended direction = ${first ?? 'none'} (want one of ${want.join(', ')})`);
     }
     case 'ORIGINALITY_NOTICE':
-      return check(name, /kembangkan jadi original/i.test(aiText), `originality notice ${/kembangkan jadi original/i.test(aiText) ? 'sent' : 'missing'}`);
+      return check(name, /into an original design/i.test(aiText), `originality notice ${/into an original design/i.test(aiText) ? 'sent' : 'missing'}`);
     case 'DO_NOT_COPY':
       return check(name, spec.reference_likes?.length > 0 && spec.reference_do_not_copy?.length > 0, `likes: ${spec.reference_likes?.length ?? 0}, must-not-copy: ${spec.reference_do_not_copy?.join('; ') || 'none'}`);
     case 'RISK_FLAG':
@@ -189,7 +189,7 @@ function designCheck(token, order, ctx, check) {
     }
     case 'APPROVAL_STAGED': {
       // the client first hears the draft is being reviewed; images only come from the crafter's approval
-      const waitAt = ai.findIndex((m) => /sedang ditinjau sebentar oleh Crafter/i.test(m.text ?? ''));
+      const waitAt = ai.findIndex((m) => /giving it a quick review/i.test(m.text ?? ''));
       const aiImages = ai.filter((m) => m.sender === 'AI' && m.media_type === 'image').length;
       const firstImage = ai.findIndex((m) => m.media_type === 'image');
       const crafterImages = ai.filter((m) => m.sender === 'CRAFTER' && m.media_type === 'image').length;

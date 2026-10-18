@@ -42,8 +42,21 @@ export function createDraftOrder(
 /**
  * Bring a stored order to the current schema: the spec is normalized to its category (legacy flat specs are migrated),
  * `craft_category` always mirrors `specifications.category`, and the old `estimated_leather_sqft` is renamed.
+ * Firestore (`ignoreUndefinedProperties`) can drop a map whose fields were all undefined (a fresh draft's `media_assets`),
+ * so every top-level map is defaulted before it is read.
  */
-export function normalizeOrder(order: OrderPayload): OrderPayload {
+export function normalizeOrder(stored: OrderPayload): OrderPayload {
+  const blank = createDraftOrder(stored.client_info?.phone_number ?? '', stored.client_info?.client_name_wa ?? '');
+  // the sqft default is left out so a legacy `estimated_leather_sqft` still migrates below
+  const { estimated_material_sqft: _sqft, ...blankBom } = blank.pattern_and_bom;
+  void _sqft;
+  const order: OrderPayload = {
+    ...stored,
+    client_info: { ...blank.client_info, ...stored.client_info },
+    material_sourcing: { ...blank.material_sourcing, ...stored.material_sourcing },
+    pattern_and_bom: { ...blankBom, ...stored.pattern_and_bom } as OrderPayload['pattern_and_bom'],
+    media_assets: stored.media_assets ?? {},
+  };
   const specifications = normalizeSpecifications(order.specifications, order.craft_category as string);
   const bom = order.pattern_and_bom as OrderPayload['pattern_and_bom'] & { estimated_leather_sqft?: number };
   const { estimated_leather_sqft, ...rest } = bom;

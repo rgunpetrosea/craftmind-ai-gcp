@@ -15,7 +15,7 @@ export interface GlossaryEntry {
   categories: CraftCategory[];
   /** Topic id in the category schema to ask the preference for after explaining. */
   topic?: string;
-  /** Short, client-friendly explanation in Bahasa Indonesia. */
+  /** Short, client-friendly explanation in English (the reply language). */
   explanation: string;
 }
 
@@ -31,7 +31,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: LEATHER_GOODS,
     topic: 'edge',
     explanation:
-      'Raw edge = pinggiran kulit dibiarkan apa adanya setelah dipotong, hanya dirapikan. Tampilannya natural dan minimalis, serat kulitnya kelihatan; cocok untuk veg-tan. Kekurangannya pinggiran bisa sedikit berbulu seiring pemakaian.',
+      'Raw edge = the leather edge is left as cut, just tidied. It looks natural and minimal, with the fibres visible; it suits veg-tan. The downside is that the edge can fray slightly with use.',
   },
   {
     id: 'burnished',
@@ -40,7 +40,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: LEATHER_GOODS,
     topic: 'edge',
     explanation:
-      'Burnished edge = pinggiran kulit diamplas lalu digosok dengan air/tokonole sampai licin dan mengilap. Hasilnya rapi, padat, dan makin bagus seiring waktu; paling cocok untuk kulit veg-tan.',
+      'Burnished edge = the leather edge is sanded, then rubbed with water or a burnishing gum until smooth and glossy. The result is neat and dense and gets better with time; it suits veg-tan leather best.',
   },
   {
     id: 'edge_paint',
@@ -49,7 +49,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: LEATHER_GOODS,
     topic: 'edge',
     explanation:
-      'Edge paint = pinggiran kulit dilapisi cat khusus beberapa lapis lalu diamplas halus. Hasilnya mulus, rata, dan warnanya bisa disamakan atau dikontraskan dengan kulit; cocok untuk kulit chrome-tan seperti Epsom atau Saffiano yang tidak bisa di-burnish.',
+      'Edge paint = the leather edge gets several coats of special paint, sanded smooth between coats. The result is sleek and even, and the colour can match or contrast with the leather; it suits chrome-tanned leathers such as Epsom or Saffiano, which cannot be burnished.',
   },
   {
     id: 'turned_edge',
@@ -57,7 +57,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /turned ?edge|lipat pinggir|pinggir(an)? dilipat/i,
     categories: LEATHER_GOODS,
     topic: 'edge',
-    explanation: 'Turned edge = pinggiran kulit ditipiskan lalu dilipat ke dalam dan dijahit, sehingga ujung potongan tidak terlihat. Tampilannya halus dan mewah, sering dipakai di dompet dan tas fashion.',
+    explanation: 'Turned edge = the leather edge is thinned, folded inward and stitched, so the cut edge is hidden. It looks refined and luxurious and is common on wallets and fashion bags.',
   },
   // Stitching
   {
@@ -67,7 +67,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: LEATHER_GOODS,
     topic: 'thread',
     explanation:
-      'Saddle stitch = jahitan tangan dengan dua jarum yang saling mengunci di setiap lubang. Jauh lebih kuat dari jahitan mesin: kalau satu benang putus, jahitan tidak terurai.',
+      'Saddle stitch = hand stitching with two needles that lock the thread in every hole. It is far stronger than machine stitching: if one thread breaks, the seam does not unravel.',
   },
   {
     id: 'diamond_stitch',
@@ -75,17 +75,17 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /diamond ?stitch/i,
     categories: LEATHER_GOODS,
     topic: 'thread',
-    explanation: 'Diamond stitch = saddle stitch dengan pahat berbentuk wajik sehingga jahitannya terlihat miring rapi seperti rantai. Kesannya klasik dan premium.',
+    explanation: 'Diamond stitch = saddle stitching made with diamond-shaped irons, so the stitches sit at a neat slant like a chain. It looks classic and premium.',
   },
   // Leathers & textures
   {
     id: 'veg_tan',
-    term: 'Veg-tan (kulit samak nabati)',
-    match: /veg[\s-]?tan|nabati/i,
+    term: 'Veg-tan (vegetable-tanned leather)',
+    match: /veg[\s-]?tan|vegetable[\s-]?tann\w*|nabati/i,
     categories: LEATHER,
     topic: 'material',
     explanation:
-      'Veg-tan = kulit yang disamak dengan bahan nabati (tanin kulit kayu). Awalnya agak kaku, lalu warnanya makin gelap dan mengilap seiring pemakaian (patina). Bisa di-burnish dan di-emboss.',
+      'Veg-tan = leather tanned with plant tannins from tree bark. It starts out fairly firm, then darkens and gains a glow with use (patina). It can be burnished and embossed.',
   },
   {
     id: 'chrome_tan',
@@ -93,7 +93,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /chrome[\s-]?tan/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Chrome-tan = kulit samak mineral (krom). Lebih lentur, tahan air, warnanya stabil dan pilihan warnanya banyak, tapi tidak membentuk patina dan pinggirannya biasanya di-edge paint.',
+    explanation: 'Chrome-tan = leather tanned with minerals (chromium). It is more supple and water-resistant, holds its colour and comes in many colours, but it does not develop a patina and its edges are usually painted.',
   },
   {
     id: 'epsom',
@@ -101,7 +101,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /epsom/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Epsom = kulit sapi ber-tekstur emboss butiran halus yang kaku dan ringan. Sangat tahan gores dan bentuknya tegas, jadi cocok untuk tas/dompet yang ingin tetap rapi.',
+    explanation: 'Epsom = calfskin embossed with a fine grain that is firm and light. It is very scratch-resistant and holds a crisp shape, so it suits bags and wallets that should always look neat.',
   },
   {
     id: 'saffiano',
@@ -109,7 +109,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /saffiano/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Saffiano = kulit dengan tekstur garis silang yang dipres dan dilapisi wax. Sangat tahan gores dan air, mudah dibersihkan, tampilannya formal.',
+    explanation: 'Saffiano = leather pressed with a cross-hatch texture and finished with wax. It is highly scratch- and water-resistant, easy to clean, and looks formal.',
   },
   {
     id: 'pull_up',
@@ -117,7 +117,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /pull[\s-]?up|crazy[\s-]?horse/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Pull-up / crazy horse = kulit berminyak-wax yang warnanya memudar terang saat ditekuk atau digores, lalu bisa kembali saat digosok. Kesannya rugged dan vintage; goresan jadi karakter.',
+    explanation: 'Pull-up / crazy horse = oil- and wax-rich leather that lightens where it is bent or scratched, and recovers when rubbed. It looks rugged and vintage; scratches become character.',
   },
   {
     id: 'nappa',
@@ -125,7 +125,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /nappa|napa/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Nappa = kulit full-grain yang sangat lembut dan lemas. Nyaman disentuh, cocok untuk lining atau tas lembut, tapi lebih mudah tergores.',
+    explanation: 'Nappa = very soft, supple full-grain leather. It feels lovely to the touch and suits linings or soft bags, but scratches more easily.',
   },
   {
     id: 'pebble',
@@ -133,7 +133,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /pebble|togo|clemence|tekstur (kulit|butir)/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Pebble grain (mis. Togo/Clemence) = kulit dengan butiran bulat yang lebih besar dan lembut. Menyamarkan goresan, terasa empuk, dan membuat tas sedikit melorot natural.',
+    explanation: 'Pebble grain = leather with a larger, softer rounded grain. It hides scratches, feels plush, and lets a bag slouch slightly in a natural way.',
   },
   {
     id: 'full_grain',
@@ -141,15 +141,15 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /full ?grain|top ?grain|genuine leather|split leather/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Full grain = lapisan kulit paling atas yang utuh (paling kuat dan bisa berpatina). Top grain = full grain yang permukaannya diamplas/dipres agar seragam. "Genuine/split" = lapisan bawah, kualitas paling rendah.',
+    explanation: 'Full grain = the complete top layer of the hide (the strongest, and it develops a patina). Top grain = full grain with the surface sanded or pressed for uniformity. "Genuine / split" = the lower layers, the lowest quality.',
   },
   {
     id: 'exotic',
-    term: 'Kulit eksotis',
-    match: /croc|buaya|python|ular|ostrich|burung unta|lizard|biawak|stingray|pari/i,
+    term: 'Exotic leather',
+    match: /croc|alligator|exotic|buaya|python|ular|ostrich|burung unta|lizard|biawak|stingray|pari/i,
     categories: LEATHER,
     topic: 'material',
-    explanation: 'Kulit eksotis (buaya, python, ostrich, dll.) didatangkan dari penyamak khusus bersertifikat CITES. Harganya jauh lebih tinggi dan butuh waktu sourcing tambahan sekitar 3–4 minggu.',
+    explanation: 'Exotic leathers (crocodile, python, ostrich and so on) come from specialist CITES-certified tanneries. They cost considerably more and need about 3-4 extra weeks of sourcing.',
   },
   {
     id: 'lining',
@@ -157,16 +157,16 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /\blining\b|furing|pelapis dalam/i,
     categories: LEATHER_GOODS,
     topic: 'lining',
-    explanation: 'Lining = lapisan dalam produk. Bisa kulit tipis, suede (lembut, mewah) atau kanvas (ringan, kuat). Tanpa lining (unlined) membuat produk lebih tipis dan sisi dalam kulit terlihat.',
+    explanation: 'Lining = the inner layer of the piece. It can be thin leather, suede (soft, luxurious) or canvas (light, strong). Unlined keeps the piece slimmer and shows the inside of the leather.',
   },
   {
     id: 'emboss',
-    term: 'Emboss / grafir',
+    term: 'Emboss / engraving',
     match: /emboss|grafir|engrav|ukir|hot ?stamp|debossed?/i,
     categories: LEATHER_GOODS,
     topic: 'personalization',
     explanation:
-      'Emboss = huruf/logo dicetak timbul atau tenggelam di kulit dengan stamp panas (blind tanpa warna atau dengan foil emas/perak). Laser engraving = motif/teks dibakar laser, cocok untuk gambar detail seperti batik.',
+      'Emboss = letters or a logo pressed raised or recessed into the leather with a heated stamp (blind, with no colour, or with gold / silver foil). Laser engraving = a pattern or text burned in by laser, good for detailed artwork such as batik.',
   },
   // Footwear
   {
@@ -175,7 +175,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /goodyear|welt/i,
     categories: ['FOOTWEAR'],
     topic: 'sole',
-    explanation: 'Goodyear welt = sol dijahit ke strip kulit (welt) yang dijahit ke upper. Sangat kokoh, tahan air, dan solnya bisa diganti (resole) berkali-kali.',
+    explanation: 'Goodyear welt = the sole is stitched to a leather strip (the welt) that is stitched to the upper. It is very sturdy and water-resistant, and the sole can be replaced (resoled) many times.',
   },
   {
     id: 'blake',
@@ -183,16 +183,16 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /blake/i,
     categories: ['FOOTWEAR'],
     topic: 'sole',
-    explanation: 'Blake stitch = sol dijahit langsung menembus insole. Lebih ramping dan lentur dari Goodyear, tapi kurang tahan air.',
+    explanation: 'Blake stitch = the sole is stitched straight through to the insole. It is slimmer and more flexible than a Goodyear welt, but less water-resistant.',
   },
   // Furniture
   {
     id: 'mortise',
-    term: 'Sambungan purus (mortise & tenon)',
+    term: 'Mortise & tenon joint',
     match: /mortise|tenon|purus/i,
     categories: ['FURNITURE'],
     topic: 'joinery',
-    explanation: 'Purus (mortise & tenon) = ujung kayu dibentuk "lidah" yang masuk ke lubang pasangannya lalu dilem. Sambungan paling kuat dan awet untuk furnitur kayu solid, tapi tidak bisa dibongkar.',
+    explanation: 'Mortise & tenon = the end of one piece of wood is shaped into a "tongue" that fits into a matching hole and is glued. It is the strongest, longest-lasting joint for solid-wood furniture, but it cannot be taken apart.',
   },
   {
     id: 'knock_down',
@@ -200,16 +200,16 @@ export const GLOSSARY: GlossaryEntry[] = [
     match: /knock ?down|bongkar pasang/i,
     categories: ['FURNITURE'],
     topic: 'joinery',
-    explanation: 'Knock-down = furnitur disambung dengan baut/fitting khusus sehingga bisa dibongkar-pasang. Mudah dikirim dan dipindah, sedikit kurang kaku dibanding purus.',
+    explanation: 'Knock-down = furniture joined with bolts or special fittings so it can be taken apart and reassembled. Easy to ship and move, slightly less rigid than mortise & tenon.',
   },
   {
     id: 'finishing_wood',
-    term: 'Finishing kayu',
-    match: /natural oil|danish oil|pu varnish|politur|finishing kayu/i,
+    term: 'Wood finishes',
+    match: /natural oil|danish oil|pu varnish|politur|finishing kayu|wood finish\w*/i,
     categories: ['FURNITURE'],
     topic: 'finish',
     explanation:
-      'Natural oil = minyak meresap ke serat, tampilan alami dan doff, perlu dirawat ulang berkala. PU = lapisan pernis yang keras dan tahan air/goresan. Duco = cat tertutup (warna solid, serat kayu tidak terlihat).',
+      'Natural oil = oil soaks into the grain for a natural, matte look and needs re-oiling from time to time. PU = a hard varnish coat that resists water and scratches. Duco = opaque paint (a solid colour, the grain is not visible).',
   },
   {
     id: 'hpl',
@@ -218,7 +218,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: ['FURNITURE'],
     topic: 'board_finish',
     explanation:
-      'HPL (high pressure laminate) = lembaran lapisan tipis yang dipres ke permukaan kabinet. Pilihan motif kayu, marmer atau warna solid; tahan gores dan mudah dibersihkan. Paling umum untuk kitchen set dan lemari built-in.',
+      'HPL (high-pressure laminate) = a thin sheet pressed onto the cabinet surface. It comes in wood, marble or solid-colour patterns, resists scratches and is easy to clean. It is the most common finish for kitchens and built-in wardrobes.',
   },
   {
     id: 'duco_melamic',
@@ -227,7 +227,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: ['FURNITURE'],
     topic: 'board_finish',
     explanation:
-      'Duco = cat semprot berlapis yang hasilnya mulus tanpa serat, warnanya bebas (doff atau glossy); lebih mahal dan perlu perawatan dari benturan. Melamic = pernis bening, serat kayu aslinya tetap terlihat; cocok kalau permukaannya veneer atau kayu.',
+      'Duco = layered spray paint for a smooth, grain-free finish in any colour (matte or glossy); it costs more and needs protecting from knocks. Melamic = a clear lacquer that keeps the natural wood grain visible; it suits veneer or solid-wood surfaces.',
   },
   {
     id: 'board_core',
@@ -236,7 +236,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: ['FURNITURE'],
     topic: 'material',
     explanation:
-      'Plywood (multipleks) = lembaran kayu tipis berlapis-lapis, kuat menahan sekrup dan lebih tahan lembap; cocok untuk kitchen set. Blockboard = inti potongan kayu yang dilapis, lebih ringan dan ekonomis, pas untuk lemari dan rak di area kering. MDF = serbuk kayu dipres, permukaan halus untuk duco tapi tidak tahan air.',
+      'Plywood = thin wood sheets layered together; it holds screws well and resists moisture better, so it suits kitchens. Blockboard = a core of wood strips with a veneer; lighter and more economical, good for wardrobes and shelving in dry areas. MDF = pressed wood fibre with a smooth surface for paint, but not water-resistant.',
   },
   {
     id: 'soft_close',
@@ -245,16 +245,16 @@ export const GLOSSARY: GlossaryEntry[] = [
     categories: ['FURNITURE'],
     topic: 'hardware',
     explanation:
-      'Soft-close = engsel pintu dan rel laci dengan peredam, jadi menutup pelan sendiri tanpa bunyi banting. Lebih awet untuk pemakaian harian; merek premium seperti Blum atau Hafele paling halus dan tahan lama.',
+      'Soft-close = door hinges and drawer rails with dampers, so they close slowly by themselves without slamming. They last longer in daily use; premium fittings such as Blum or Hafele are the smoothest and most durable.',
   },
   {
     id: 'countertop',
-    term: 'Top table',
-    match: /top ?table|solid ?surface|granit|marmer|sintered/i,
+    term: 'Countertop',
+    match: /top ?table|counter ?top|solid ?surface|granit\w*|marmer|marble|sintered/i,
     categories: ['FURNITURE'],
     topic: 'countertop',
     explanation:
-      'Top table = meja atas kitchen set. Granit paling tahan panas dan gores; marmer lebih mewah tapi mudah bernoda; solid surface mulus tanpa sambungan dan bisa dibentuk, tapi kurang tahan panas langsung.',
+      'Countertop = the work surface of the kitchen. Granite resists heat and scratches best; marble is more luxurious but stains easily; solid surface is seamless and can be shaped, but handles direct heat less well.',
   },
 ];
 
@@ -263,17 +263,17 @@ export function findGlossary(text: string, category?: CraftCategory): GlossaryEn
 }
 
 /**
- * Does the burst ask something the assistant should answer? "?" anywhere, or Indonesian question forms
- * ("kayak gimana", "apa itu", "bedanya apa", "apakah", "maksudnya").
+ * Does the burst ask something the assistant should answer? "?" anywhere, or English / Indonesian question forms
+ * ("what is", "difference between", "kayak gimana", "apa itu", "bedanya apa", "apakah", "maksudnya").
  */
 export const QUESTION =
-  /\?|\b(gimana|bagaimana|kayak apa|seperti apa|apa itu|apa sih|apakah|bedanya|perbedaan|maksudnya|artinya|kenapa|mengapa|bisa ga|bisa nggak|bisa gak|mana yang|lebih bagus|rekomendasi(nya)?)\b/i;
+  /\?|\b(gimana|bagaimana|kayak apa|seperti apa|apa itu|apa sih|apakah|bedanya|perbedaan|maksudnya|artinya|kenapa|mengapa|bisa ga|bisa nggak|bisa gak|mana yang|lebih bagus|rekomendasi(nya)?|what(?:'s| is| are| does)|how (?:does|do|would|is)|difference between|which (?:one|is better)|explain)\b/i;
 
 /** "X itu kayak gimana?", "bedanya apa?": the client wants an explanation, NOT stating a choice. */
-export const ASKS_EXPLANATION = /(kayak|seperti) (apa|gimana)|apa itu|apa sih|bedanya|perbedaan|maksudnya( apa)?\?|artinya|itu (gimana|bagaimana)|gimana (bentuk|hasil|tampilan)/i;
+export const ASKS_EXPLANATION = /(kayak|seperti) (apa|gimana)|apa itu|apa sih|bedanya|perbedaan|maksudnya( apa)?\?|artinya|itu (gimana|bagaimana)|gimana (bentuk|hasil|tampilan)|what(?:'s| is| are) (?:a |an |the )?\w|what does .{1,30} mean|difference between|how does .{1,30} look|what .{1,20} look like|explain/i;
 
 /** "Bisa bikin meja jati...?" is a request phrased as a question, not something to explain. */
-export const REQUEST_AS_QUESTION = /^(?:(?:mas|kak|min|gan|sis|halo|hai|permisi|pak|bu)\b[\s,]*)*(?:apakah\s+)?(?:bisa|boleh|mau)\b[^?]{0,40}\b(bikin|buat|pesan|order|custom|request|minta)\b/i;
+export const REQUEST_AS_QUESTION = /^(?:(?:mas|kak|min|gan|sis|halo|hai|permisi|pak|bu)\b[\s,]*)*(?:apakah\s+)?(?:bisa|boleh|mau)\b[^?]{0,40}\b(bikin|buat|pesan|order|custom|request|minta)\b|^(?:(?:hi|hello|hey)\b[\s,!]*)*(?:can|could|would|do) you\b[^?]{0,40}\b(make|craft|build|do|create)\b/i;
 
 /** Drop "explain this term" sentences before parsing attributes, so asking about raw edge doesn't choose raw edge. */
 export function withoutExplanationQuestions(text: string): string {
@@ -284,7 +284,7 @@ export function withoutExplanationQuestions(text: string): string {
 }
 
 /** Asking for price / timeline only: answered by the crafter's quote, so it never blocks the spec card. */
-export const PRICE_OR_TIMELINE = /\b(berapa|harga\w*|biaya\w*|ongkos|kapan (jadi|selesai)|berapa lama|estimasi waktu|lead time)\b/i;
+export const PRICE_OR_TIMELINE = /\b(berapa|harga\w*|biaya\w*|ongkos|kapan (jadi|selesai)|berapa lama|estimasi waktu|lead time|how much|price|pricing|cost\w*|how long|when (will|can) it be (ready|done)|turnaround)\b/i;
 
 /**
  * Requests outside what the workshop quotes from its schemas and glossary: electronics, safety certifications, regulated

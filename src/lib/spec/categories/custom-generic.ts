@@ -56,17 +56,17 @@ export const CUSTOM_GENERIC: CategorySchema<'CUSTOM_GENERIC'> = {
     },
   },
   topics: [
-    { id: 'construction', label: 'Jenis', ask: 'mau dibuatkan apa: dompet, tas, sepatu, furnitur, atau barang lain', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
-    { id: 'material', label: 'Bahan', ask: 'ada bayangan bahannya mau apa', required: true, fields: ['primary_material'], deferrable: false },
+    { id: 'construction', label: 'Type', ask: 'what would you like us to make: a wallet, a bag, shoes, furniture, or something else', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
+    { id: 'material', label: 'Material', ask: 'do you have a material in mind', required: true, fields: ['primary_material'], deferrable: false },
     {
       id: 'details',
       label: 'Detail',
-      ask: 'barangnya buat dipakai apa dan oleh siapa, biar kami bisa bayangkan ukurannya',
+      ask: 'what will it be used for and by whom, so we can picture the right size',
       required: true,
       fields: ['dimensions_cm'],
       deferrable: false,
       is_filled: (s) => s.custom_fields.length > 0 || s.attributes.dimensions_cm.length > 0 || s.notes.trim().length > 0,
     },
-    { id: 'quantity', label: 'Jumlah', ask: 'mau dibuat berapa buah', required: false, fields: ['quantity'], deferrable: true },
+    { id: 'quantity', label: 'Quantity', ask: 'how many pieces would you like', required: false, fields: ['quantity'], deferrable: true },
   ],
 };

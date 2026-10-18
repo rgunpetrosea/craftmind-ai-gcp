@@ -102,11 +102,11 @@ export const FOOTWEAR: CategorySchema<'FOOTWEAR'> = {
     },
   },
   topics: [
-    { id: 'construction', label: 'Model', ask: 'sepatunya lebih sering dipakai buat acara formal, kerja harian, atau santai', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
-    { id: 'size', label: 'Ukuran', ask: 'biasanya pakai sepatu ukuran berapa, dan kakinya cenderung lebar atau ramping', required: true, fields: ['eu_size'], deferrable: false },
-    { id: 'material', label: 'Kulit upper', ask: 'warnanya mau hitam, coklat, atau warna lain, dan suka kulit yang licin rapi atau yang kesannya rugged', required: true, fields: ['upper_material'], deferrable: false },
-    { id: 'sole', label: 'Sol', ask: 'lebih sering dipakai di dalam ruangan atau banyak jalan di luar', required: false, fields: ['outsole_type', 'welt_method'], deferrable: true },
-    { id: 'last', label: 'Last', ask: 'ujung sepatunya suka yang bulat, agak meruncing, atau kotak', required: false, fields: ['last_shape'], deferrable: true },
-    { id: 'heel', label: 'Hak', ask: 'haknya mau rata atau sedikit tinggi', required: false, fields: ['heel_height_cm'], deferrable: true },
+    { id: 'construction', label: 'Style', ask: 'will you wear these mostly for formal events, everyday work, or casual outings', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
+    { id: 'size', label: 'Size', ask: 'what shoe size do you usually wear, and are your feet on the wide or narrow side', required: true, fields: ['eu_size'], deferrable: false },
+    { id: 'material', label: 'Upper leather', ask: 'would you like black, brown, or another colour, and do you prefer smooth, polished leather or a rugged look', required: true, fields: ['upper_material'], deferrable: false },
+    { id: 'sole', label: 'Sole', ask: 'will you mostly wear them indoors, or do a lot of walking outside', required: false, fields: ['outsole_type', 'welt_method'], deferrable: true },
+    { id: 'last', label: 'Last', ask: 'do you prefer a round, slightly pointed, or square toe', required: false, fields: ['last_shape'], deferrable: true },
+    { id: 'heel', label: 'Heel', ask: 'would you like a flat heel or a slightly raised one', required: false, fields: ['heel_height_cm'], deferrable: true },
   ],
 };

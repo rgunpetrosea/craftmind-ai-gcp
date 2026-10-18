@@ -54,9 +54,9 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
       if (renders.length && order.session_state !== 'APPROVED') {
         const s = order.specifications;
         const pending = missingRequired(s, order.intake).map((t) => t.label);
-        await sendToClient(order, 'CRAFTER', `${conceptPresentation(s, pending)}${note ? `\n\nCatatan crafter: ${note}` : ''}`);
+        await sendToClient(order, 'CRAFTER', `${conceptPresentation(s, pending)}${note ? `\n\nCrafter's note: ${note}` : ''}`);
         for (const r of renders) {
-          await sendToClient(order, 'CRAFTER', angleDef(s.category, r.angle, s.construction_type).label_id, { type: 'image', url: r.url, mime_type: mimeOf(r.url) });
+          await sendToClient(order, 'CRAFTER', angleDef(s.category, r.angle, s.construction_type).label, { type: 'image', url: r.url, mime_type: mimeOf(r.url) });
         }
       }
       return Response.json({ order, released: renders.map((r) => r.angle) });

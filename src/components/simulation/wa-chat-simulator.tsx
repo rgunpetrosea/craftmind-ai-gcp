@@ -20,13 +20,15 @@ interface SessionResponse {
   concept_pending?: boolean;
 }
 
+// English for the JAPAC demo; one Indonesian line shows that the assistant still understands it (and replies in English)
 const QUICK_MESSAGES = [
-  'Mas bisa bikin meja makan jati 180x90x75 buat 6 orang?',
+  'Can you make a teak dining table, 180x90x75, for 6 people?',
+  'Hi, I would like a slim leather card holder',
+  'Fits 4 cards + a note slot in the middle, black Epsom',
+  'Size 10x7 cm, embossed initials R.W in the bottom right corner',
+  "Up to you for the rest. That's all",
   'Halo kak, mau bikin dompet kartu pipih',
-  'Muat 4 kartu + selipan uang di tengah, Epsom hitam',
-  'Ukuran 10x7 cm, emboss inisial R.W di pojok kanan bawah',
-  'Terserah mas untuk lainnya. Itu saja kak',
-  'Mau bicara dengan admin/crafter',
+  'I would like to talk to the crafter',
 ];
 
 interface ScenarioStep {

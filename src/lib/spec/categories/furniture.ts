@@ -275,18 +275,18 @@ export const FURNITURE: CategorySchema<'FURNITURE'> = {
   // "size" and "material" have a loose-furniture and a built-in variant with the same id (one applies at a time), so
   // the site-visit rule and the material answer mapping work for both.
   topics: [
-    { id: 'construction', label: 'Jenis', ask: 'mau dibuatkan furnitur apa', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
-    { id: 'size', label: 'Ukuran', ask: 'mau ditaruh di ruangan mana dan untuk berapa orang; kalau harus pas dengan ruangan, kami bisa survei ukur ke lokasi', required: true, fields: ['dimensions_cm'], excludes: BUILT_IN_FURNITURE, deferrable: false },
-    { id: 'size', label: 'Ukuran', ask: 'lebar dinding yang mau dipasang kira-kira berapa, dan mau sampai plafon atau tidak; kalau belum diukur, kami survei ukur ke lokasi', required: true, fields: ['dimensions_cm'], applies_to: BUILT_IN_FURNITURE, deferrable: false },
-    { id: 'material', label: 'Bahan', ask: 'suka tampilan kayu yang hangat dan klasik, kayu terang yang modern, atau kombinasi kayu dan besi', required: true, fields: ['primary_material'], excludes: BUILT_IN_FURNITURE, deferrable: false },
-    { id: 'material', label: 'Bahan inti', ask: 'badan kabinetnya mau plywood (multipleks, lebih kuat dan tahan lembap) atau blockboard (lebih ekonomis)', required: true, fields: ['primary_material'], applies_to: BUILT_IN_FURNITURE, deferrable: false },
-    { id: 'finish', label: 'Finishing', ask: 'permukaannya mau natural doff, atau lebih mengkilap dan tahan air', required: false, fields: ['finish_coating'], excludes: BUILT_IN_FURNITURE, deferrable: true },
+    { id: 'construction', label: 'Type', ask: 'what piece of furniture would you like us to make', required: true, fields: [], deferrable: false, is_filled: (s) => s.construction_type !== 'UNSPECIFIED' },
+    { id: 'size', label: 'Size', ask: 'which room is it for and how many people will use it; if it must fit the room exactly, we can come and measure on site', required: true, fields: ['dimensions_cm'], excludes: BUILT_IN_FURNITURE, deferrable: false },
+    { id: 'size', label: 'Size', ask: 'roughly how wide is the wall it goes on, and should it reach the ceiling; if it has not been measured yet, we can measure on site', required: true, fields: ['dimensions_cm'], applies_to: BUILT_IN_FURNITURE, deferrable: false },
+    { id: 'material', label: 'Material', ask: 'do you like a warm, classic wood look, a light modern wood, or a mix of wood and metal', required: true, fields: ['primary_material'], excludes: BUILT_IN_FURNITURE, deferrable: false },
+    { id: 'material', label: 'Core board', ask: 'for the cabinet body, would you like plywood (stronger and moisture-resistant) or blockboard (more economical)', required: true, fields: ['primary_material'], applies_to: BUILT_IN_FURNITURE, deferrable: false },
+    { id: 'finish', label: 'Finishing', ask: 'would you like a natural matte surface, or a glossier, water-resistant one', required: false, fields: ['finish_coating'], excludes: BUILT_IN_FURNITURE, deferrable: true },
     // built-ins: core, finishing, hinges & rails and (kitchen) top table are all MANDATORY slots; no mockup before they are filled
-    { id: 'board_finish', label: 'Finishing', ask: 'finishing luarnya mau HPL (motif kayu atau warna solid, tahan gores), duco (cat mulus, warna bebas), atau melamic (serat kayu tetap kelihatan)', required: true, fields: ['finish_coating'], applies_to: BUILT_IN_FURNITURE, deferrable: true },
-    { id: 'hardware', label: 'Engsel & rel', ask: 'engsel pintu dan rel lacinya mau yang standar, atau soft-close (nutupnya pelan dan nggak bunyi)', required: true, fields: ['hardware_fittings'], applies_to: BUILT_IN_FURNITURE, deferrable: true },
-    { id: 'countertop', label: 'Top table', ask: 'meja atas (top table) dapurnya mau granit, marmer, atau solid surface', required: true, fields: ['countertop'], applies_to: ['KITCHEN_SET'], deferrable: true },
+    { id: 'board_finish', label: 'Finishing', ask: 'for the outer finish, would you like HPL laminate (wood pattern or solid colour, scratch-resistant), duco (smooth paint, any colour), or melamic (the wood grain stays visible)', required: true, fields: ['finish_coating'], applies_to: BUILT_IN_FURNITURE, deferrable: true },
+    { id: 'hardware', label: 'Hinges & rails', ask: 'would you like standard door hinges and drawer rails, or soft-close ones (they close slowly and silently)', required: true, fields: ['hardware_fittings'], applies_to: BUILT_IN_FURNITURE, deferrable: true },
+    { id: 'countertop', label: 'Countertop', ask: 'would you like the kitchen countertop in granite, marble, or solid surface', required: true, fields: ['countertop'], applies_to: ['KITCHEN_SET'], deferrable: true },
     directionTopic<'FURNITURE'>(),
-    { id: 'joinery', label: 'Sambungan', ask: 'nanti perlu sering dipindah atau dibongkar, atau dipasang permanen', required: false, fields: ['joinery_type'], excludes: BUILT_IN_FURNITURE, deferrable: true },
-    { id: 'upholstery', label: 'Jok', ask: 'dudukannya mau empuk pakai jok, atau kayu polos', required: false, fields: ['upholstery'], applies_to: ['CHAIR', 'STOOL', 'BENCH', 'BED_FRAME'], deferrable: true },
+    { id: 'joinery', label: 'Joinery', ask: 'will it need to be moved or taken apart often, or will it stay in place permanently', required: false, fields: ['joinery_type'], excludes: BUILT_IN_FURNITURE, deferrable: true },
+    { id: 'upholstery', label: 'Upholstery', ask: 'would you like a cushioned, upholstered seat, or plain wood', required: false, fields: ['upholstery'], applies_to: ['CHAIR', 'STOOL', 'BENCH', 'BED_FRAME'], deferrable: true },
   ],
 };

@@ -210,11 +210,11 @@ export async function reviewConcept(
     }))) ?? latest;
 
   if (failedForReal && opts.source !== 'CRAFTER') {
-    const what = hold ? ' (gambar ditahan, belum dikirim ke klien)' : draft ? ' (pass terbaik dikirim ke klien sebagai DRAFT konsep)' : '';
+    const what = hold ? ' (images held, not yet sent to the client)' : draft ? ' (best pass sent to the client as a DRAFT concept)' : '';
     await notifyCrafter(
       latest,
-      `Konsep desain belum lolos Design Critic setelah ${revisions} revisi otomatis${what}. ` +
-        `Skor terbaik (revisi ${best?.report.revision_number ?? revisions}): ${scoreBreakdown(best?.report ?? report)}. Isu: ${report.weaknesses.join('; ') || report.improvement_instructions}. Mohon review di dashboard.`,
+      `The design concept has not passed the Design Critic after ${revisions} automatic revisions${what}. ` +
+        `Best scores (revision ${best?.report.revision_number ?? revisions}): ${scoreBreakdown(best?.report ?? report)}. Issues: ${report.weaknesses.join('; ') || report.improvement_instructions}. Please review on the dashboard.`,
     );
   }
   return { approved: passed || advisory, held: hold, draft, report: best?.report ?? report, revisions, renders: currentAngles(latest) };

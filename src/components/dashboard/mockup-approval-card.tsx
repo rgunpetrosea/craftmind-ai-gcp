@@ -133,7 +133,7 @@ export function MockupApprovalCard({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="Optional note to the client with the mockups (e.g. konstruksi sudah kami cek, siap produksi)"
+            placeholder="Optional note to the client with the mockups (e.g. construction checked, ready for production)"
             className="w-full rounded-lg px-3 py-2 text-sm ring-1 ring-stone-300 focus:outline-none focus:ring-leather-500"
           />
           <div className="flex flex-wrap items-center gap-2">

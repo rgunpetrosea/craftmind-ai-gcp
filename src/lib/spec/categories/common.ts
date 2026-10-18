@@ -12,8 +12,8 @@ import type { CraftCategory } from '@/lib/types';
  */
 export const visualReferenceTopic = <C extends CraftCategory>(details: string): TopicDef<C> => ({
   id: 'visual_reference',
-  label: 'Foto contoh',
-  ask: `ada contoh foto ${details} yang disukai, kalau ada kirim aja fotonya`,
+  label: 'Reference photo',
+  ask: `do you have a photo of ${details} you like; if so, feel free to send it`,
   required: false,
   fields: [],
   deferrable: true,
@@ -23,8 +23,8 @@ export const visualReferenceTopic = <C extends CraftCategory>(details: string): 
 
 export const directionTopic = <C extends CraftCategory>(): TopicDef<C> => ({
   id: 'direction',
-  label: 'Arah desain',
-  ask: 'dari arah desain original ini, mana yang paling cocok atau mau digabung',
+  label: 'Design direction',
+  ask: 'which of these original design directions suits you best, or would you like to combine them',
   required: true,
   fields: [],
   deferrable: true,

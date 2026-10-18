@@ -88,8 +88,8 @@ export function offerField(d: NegotiationDecision): CustomField | undefined {
   if (d.discount_idr <= 0 || d.kind === 'ESCALATE') return undefined;
   return {
     id: 'cf-ai-discount',
-    label: d.kind === 'FREEBIE' ? `Gratis: ${d.freebie}` : 'Diskon',
-    value: 'penawaran AI saat nego, menunggu konfirmasi crafter',
+    label: d.kind === 'FREEBIE' ? `Free: ${d.freebie}` : 'Discount',
+    value: 'AI offer during negotiation, awaiting crafter confirmation',
     surcharge_idr: -d.discount_idr,
     source: 'AI',
     kind: 'DISCOUNT',
@@ -97,7 +97,7 @@ export function offerField(d: NegotiationDecision): CustomField | undefined {
 }
 
 const NEGOTIATION_HANDOVER =
-  'Untuk harga segitu perlu dibahas langsung dengan {{active_crafter_name}} ya kak. Chatnya sudah aku teruskan, beliau akan segera membalas.';
+  "A price like that needs to be discussed directly with {{active_crafter_name}}. I've passed the chat on, and they will reply shortly.";
 
 export function negotiationHandoverMessage(profile: CrafterProfile): string {
   return renderTemplate(NEGOTIATION_HANDOVER, profile);
@@ -108,23 +108,23 @@ export function negotiationReply(d: NegotiationDecision, finalTotal: number, new
   const bubbles: string[] = [];
   if (newAddOns.length) {
     const names = newAddOns.map((f) => f.label.split(' (')[0].split(' / ')[0]).join(', ');
-    bubbles.push(`Noted kak, ${names} sudah aku tambahkan ke spesifikasinya. Karena ada tambahan ini, biaya bahan dan pengerjaannya ikut naik ya.`);
+    bubbles.push(`Noted, I've added ${names} to the specification. With this addition, the material and labour cost goes up as well.`);
   }
-  const quote = `Estimasi harganya sekarang ${formatIDR(d.total_idr)}.`;
+  const quote = `The estimate is now ${formatIDR(d.total_idr)}.`;
   switch (d.kind) {
     case 'FREEBIE':
-      bubbles.push(`${quote} Sebagai bonus, ${d.freebie?.split(' (')[0]} kami kasih gratis, jadi ${formatIDR(finalTotal)}.`);
+      bubbles.push(`${quote} As a bonus, we'll include ${d.freebie?.split(' (')[0]} free of charge, bringing it to ${formatIDR(finalTotal)}.`);
       break;
     case 'DISCOUNT':
-      bubbles.push(`${quote} Untuk kakak, kami bisa bantu potongan ${formatIDR(d.discount_idr)}, jadi ${formatIDR(finalTotal)}.`);
+      bubbles.push(`${quote} For you, we can offer a discount of ${formatIDR(d.discount_idr)}, bringing it to ${formatIDR(finalTotal)}.`);
       break;
     default:
       bubbles.push(
         d.discount_idr > 0
-          ? `${quote} Harga yang kakak minta sudah di bawah biaya bahan dan pengerjaan, jadi mohon maaf belum bisa; paling maksimal kami bantu potongan ${formatIDR(d.discount_idr)}, jadi ${formatIDR(finalTotal)}.`
-          : `${quote} Harga ini sudah mepet dengan biaya bahan dan pengerjaan, jadi mohon maaf belum bisa turun lagi kak.`,
+          ? `${quote} The price you asked for is below our material and labour cost, so unfortunately we can't go that low; the most we can offer is a discount of ${formatIDR(d.discount_idr)}, bringing it to ${formatIDR(finalTotal)}.`
+          : `${quote} This price is already close to our material and labour cost, so unfortunately we can't lower it further.`,
       );
   }
-  bubbles.push(renderTemplate('Harga final tetap dikonfirmasi {{active_crafter_name}} di penawaran resmi ya kak.', profile));
+  bubbles.push(renderTemplate('The final price will be confirmed by {{active_crafter_name}} in the official quotation.', profile));
   return bubbles.join('\n\n');
 }

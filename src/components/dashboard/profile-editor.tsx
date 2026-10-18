@@ -83,7 +83,7 @@ function ProfileForm({ initial }: { initial: CrafterProfile }) {
                     onClick={() => toggle(o.id)}
                     className={cn('rounded-full px-3 py-1 text-xs ring-1', on ? 'bg-leather-700 text-white ring-leather-700' : 'bg-white text-stone-600 ring-stone-300 hover:bg-stone-50')}
                   >
-                    {o.label_id} <span className="opacity-60">· {o.id}</span>
+                    {o.label} <span className="opacity-60">· {o.id}</span>
                   </button>
                 );
               })}
@@ -100,7 +100,7 @@ function ProfileForm({ initial }: { initial: CrafterProfile }) {
             ['Off-topic / prompt injection', refusalMessage(profile)],
             ['AI render limit reached (6 rounds per session)', mockupCapMessage(profile)],
             ['AI turn budget used up', sessionCapMessage(profile)],
-            ...(firstNotAllowed ? [[`Asks for ${firstNotAllowed.label_id}`, mismatchMessage(profile, firstNotAllowed.label_id)]] : []),
+            ...(firstNotAllowed ? [[`Asks for ${firstNotAllowed.label}`, mismatchMessage(profile, firstNotAllowed.label)]] : []),
           ].map(([label, text], i) => (
             <div key={i}>
               {label && <p className="mb-0.5 mt-2 text-[10px] uppercase tracking-wide text-stone-500">{label}</p>}

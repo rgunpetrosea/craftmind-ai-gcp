@@ -112,12 +112,12 @@
       "debounce_bypass": false,
       "design_checks": [
         "RISK_FLAG:synthetic",
-        "CLIENT_ADVISED:kulit sintetis susah memberi kesan premium",
+        "CLIENT_ADVISED:synthetic leather rarely looks premium",
         "CRITIC_FAILED:premium_perception",
         "CRAFTER_STATUS:NEEDS_REVIEW"
       ]
     },
-    "expected_summary": "Unspecified · AI_COPILOT · NONE · RISK_FLAG:synthetic;CLIENT_ADVISED:kulit sintetis susah memberi kesan premium;CRITIC_FAILED:premium_perception;CRAFTER_STATUS:NEEDS_REVIEW",
+    "expected_summary": "Unspecified · AI_COPILOT · NONE · RISK_FLAG:synthetic;CLIENT_ADVISED:synthetic leather rarely looks premium;CRITIC_FAILED:premium_perception;CRAFTER_STATUS:NEEDS_REVIEW",
     "steps": [
       {
         "as": "CLIENT",
@@ -164,11 +164,11 @@
       "debounce_bypass": false,
       "design_checks": [
         "RISK_FLAG:laptop",
-        "CLIENT_ADVISED:belum muat laptop 15 inch",
+        "CLIENT_ADVISED:won't fit a 15-inch laptop",
         "CRITIC_FAILED:proportion_balance"
       ]
     },
-    "expected_summary": "EXACT_CM · 28x8x20 cm · IN_STOCK · AI_COPILOT · NONE · RISK_FLAG:laptop;CLIENT_ADVISED:belum muat laptop 15 inch;CRITIC_FAILED:proportion_balance",
+    "expected_summary": "EXACT_CM · 28x8x20 cm · IN_STOCK · AI_COPILOT · NONE · RISK_FLAG:laptop;CLIENT_ADVISED:won't fit a 15-inch laptop;CRITIC_FAILED:proportion_balance",
     "steps": [
       {
         "as": "CLIENT",

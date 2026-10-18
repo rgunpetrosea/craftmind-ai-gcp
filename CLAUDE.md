@@ -537,6 +537,20 @@ specs are migrated); always use `normalizeSpecifications()` before reading attri
 - Scenarios: follow-ups may be dashboard calls (`APPROVE`, `wait_for_renders`); checks `APPROVAL_STAGED`,
   `SPEC_EXPLICIT:a|b|c`. Rows asserting critic results need the server started with `DESIGN_CRITIC=on`.
 
+## English Client Voice (v20, JAPAC demo)
+- Every client-facing text is English: reply prompt (rule 5 LANGUAGE: always reply in English, understand Indonesian),
+  greeting / refusal / hand-over templates, topic `ask` questions, direction cards (`feel` "Clean & Logo-Free",
+  "Structured & Classic", "Practical & Organized"...), spec card (`specLines` defaults to `label`), quotation, concept
+  captions, negotiation, glossary explanations, angle captions (`AngleDef.label`), offerings (`Offering.label`).
+  This supersedes the Indonesian voice examples in v8 / v10 / v17; the rules themselves (bubbles, no hype, lifestyle
+  questions, ≤3 choices) still apply.
+- Indonesian input keeps working: every regex (parsers, `AUTO_DECIDE`, `VISUAL_REQUEST`, `CHANGE_REQUEST`, `DECLINE`,
+  `FINISHED`, `QUESTION`, `answer_words`, ordinals) matches English AND Indonesian. Add both when you add a pattern.
+- Catalog original features: `en` is shown and prompted; `legacy_id` is the old Indonesian text, still recognised by
+  `isCatalogFeature` / `originalFeaturePrompt` for specs stored before v20.
+- Firestore drops a map whose fields are all `undefined` (`ignoreUndefinedProperties`): `normalizeOrder` defaults every
+  top-level map (`media_assets`, `pattern_and_bom`, `material_sourcing`, `client_info`); never read one un-normalized.
+
 ## Step-by-Step Task Execution Rules for Claude Code
 1. Initialize the Next.js project with App Router, TypeScript, and Tailwind CSS.
 2. Install `@google/genai` or `@google-cloud/vertexai`, `firebase-admin`, `lucide-react`, and `clsx`.

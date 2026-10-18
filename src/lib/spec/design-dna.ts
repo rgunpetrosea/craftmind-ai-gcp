@@ -347,7 +347,7 @@ export function analyzeReferences(text: string): ReferenceAnalysis {
 /** Section 4, last rule: the client asked for a copy → we keep what they like and develop an original design. */
 export function originalityNotice(references: string[]): string {
   const ref = references.length ? ` ${references[0]}` : '';
-  return `Untuk referensi${ref}-nya, kami ambil kesan, kualitas, dan fungsi yang kakak suka, tapi desainnya kami kembangkan jadi original (tanpa logo, motif, atau ciri khas brand-nya) ya kak.`;
+  return `For your${ref} reference, we'll keep the feel, quality and function you like, but develop it into an original design (no logos, monograms or the brand's signature details).`;
 }
 
 // ---------------------------------------------------------------------------

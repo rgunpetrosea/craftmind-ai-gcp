@@ -114,7 +114,7 @@ async function handleEvent(event: InboundWhatsAppEvent, phone: string, crafterId
   const store = getStore();
   const debouncer = getDebouncer();
   const targeted = event.sender === 'CRAFTER' && event.order_id ? await store.getOrder(event.order_id) : null;
-  const order = targeted ?? (await resolveSession(phone, event.client_name_wa?.trim() || 'Kak', crafterId)).order;
+  const order = targeted ?? (await resolveSession(phone, event.client_name_wa?.trim() || 'Customer', crafterId)).order;
   let orderDirty = expirePartialPause(order);
 
   // --- Crafter manual reply -------------------------------------------------
@@ -161,7 +161,7 @@ async function handleEvent(event: InboundWhatsAppEvent, phone: string, crafterId
     await store.saveOrder(order);
     await store.appendMessage({ ...inbound, awaiting_crafter_review: true });
     await sendToClient(order, 'SYSTEM', renderTemplate(HANDOFF_MESSAGES.CLIENT_REQUEST, await store.getCrafterProfile(order.crafter_id)));
-    await notifyCrafter(order, order.escalation_note ?? 'Klien minta bicara dengan crafter');
+    await notifyCrafter(order, order.escalation_note ?? 'Client asked to talk to the crafter');
     parseSilently(order.order_id, event.text);
     return respond('ESCALATED_TO_CRAFTER', order, { keyword });
   }
@@ -221,7 +221,7 @@ async function startFreshDraft(phone: string, crafterId: string): Promise<Respon
   const store = getStore();
   const conversation = await store.getConversation(phone, crafterId);
   if (conversation) getDebouncer().cancel(conversation.active_order_id);
-  const order = await newDraft(phone, conversation?.client_name_wa ?? 'Kak', crafterId);
+  const order = await newDraft(phone, conversation?.client_name_wa ?? 'Customer', crafterId);
   await store.saveOrder(order);
   await store.saveConversation({
     phone_number: phone,

@@ -210,7 +210,7 @@ function completeForBom(raw: Specifications, inventory: InventoryItem[], preset:
     if (!size || Math.max(size.length, size.height) < 15) {
       a.dimensions_cm = { ...def.dimensions_cm };
       spec.dimension_mode = 'REFERENCE_BASED';
-      spec.reference_object = 'ukuran standar dompet panjang (long bifold)';
+      spec.reference_object = 'standard long bifold wallet size';
     }
   }
   const d = a.dimensions_cm as Dimensions | undefined;
@@ -330,7 +330,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     const latest = await commit(orderId, { intake: { ...stored, processed_message_id, session_turn_count: turn } });
     const reply = sessionCapMessage(profile);
     if (!isAiBlocked(latest)) {
-      setAutomationMode(latest, 'FULL_MANUAL', 'SESSION_LIMIT', undefined, undefined, `Batas ${SESSION_TURN_CAP} balasan AI untuk sesi ini tercapai; lanjutkan secara manual`);
+      setAutomationMode(latest, 'FULL_MANUAL', 'SESSION_LIMIT', undefined, undefined, `AI reply limit of ${SESSION_TURN_CAP} for this session reached; continue manually`);
       await store.saveOrder(latest);
       await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
       await sendToClient(latest, 'SYSTEM', reply);
@@ -445,8 +445,8 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     );
   const revisionAdjustment = revisionRequest && !visualChanged ? burstText.replace(/\s+/g, ' ').trim() : undefined;
   if (revisionAdjustment && !spec0.custom_fields.some((f) => f.value.toLowerCase() === revisionAdjustment.toLowerCase())) {
-    const n = spec0.custom_fields.filter((f) => f.label.startsWith('Revisi visual')).length + 1;
-    spec0.custom_fields = mergeCustomFields(spec0.custom_fields, [{ label: `Revisi visual ${n}`, value: revisionAdjustment }]);
+    const n = spec0.custom_fields.filter((f) => /^(Revisi visual|Visual revision)/.test(f.label)).length + 1;
+    spec0.custom_fields = mergeCustomFields(spec0.custom_fields, [{ label: `Visual revision ${n}`, value: revisionAdjustment }]);
   }
 
   /**
@@ -462,7 +462,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       await updateIntake(orderId, { session_turn_count: turn });
       if (warn) {
         const current = await store.getOrder(orderId);
-        if (current) await notifyCrafter(current, `Intake belum lengkap setelah ${turn} balasan AI; siap diambil alih`);
+        if (current) await notifyCrafter(current, `Intake still incomplete after ${turn} AI replies; ready for takeover`);
       }
     }
     return sent;
@@ -498,7 +498,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
     });
     const reply = loopHandoverMessage(profile);
     if (!isAiBlocked(latest)) {
-      setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE', undefined, undefined, `${conversation.confusion_strikes} giliran chat berturut-turut tanpa konteks desain (off-topic / tidak jelas)`);
+      setAutomationMode(latest, 'FULL_MANUAL', 'CONFUSION_RULE', undefined, undefined, `${conversation.confusion_strikes} consecutive chat turns without design context (off-topic / unclear)`);
       await store.saveOrder(latest);
       await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
       await sendToClient(latest, 'SYSTEM', reply);
@@ -602,7 +602,7 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
       });
       const reply = negotiationHandoverMessage(profile);
       if (!isAiBlocked(latest)) {
-        const note = `Klien minta ${formatIDR(decision.requested_idr ?? 0)}, ${Math.round((decision.below_floor ?? 0) * 100)}% di bawah harga dasar ${formatIDR(decision.floor_idr)} (penawaran ${formatIDR(decision.total_idr)}), tanpa tambahan add-on`;
+        const note = `Client asked for ${formatIDR(decision.requested_idr ?? 0)}, ${Math.round((decision.below_floor ?? 0) * 100)}% below the floor price ${formatIDR(decision.floor_idr)} (quote ${formatIDR(decision.total_idr)}), with no added add-ons`;
         setAutomationMode(latest, 'FULL_MANUAL', 'PRICE_NEGOTIATION', undefined, undefined, note);
         await store.saveOrder(latest);
         await Promise.all(burst.map((m) => store.updateMessage(orderId, m.id, { awaiting_crafter_review: true })));
@@ -750,10 +750,10 @@ async function executePipeline(orderId: string, opts: { force?: boolean }): Prom
   const reply = needsBuild
     ? specCardText(order.client_info.client_name_wa, spec, { updated: wasLocked })
     : revisionRequest
-      ? 'Siap kak, gambarnya aku sesuaikan dulu ya.'
+      ? "Sure, I'll update the picture now."
       : visualRequest
-        ? 'Siap kak, aku buatin gambarnya dulu ya.'
-        : 'Noted kak, sudah kami teruskan ke crafter.';
+        ? "Sure, I'll put the picture together now."
+        : "Noted, I've passed this on to our crafter.";
   const sent = (await say(withNotice(reply), true)) && (await sendAdvisories());
   if (sent && wantsRender) {
     // one render round for the whole set (or the hand-off message once the render cap is reached); any review angle

@@ -203,7 +203,7 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
   // still awaiting approval is staged on the dashboard below.
   const pendingApproval = new Set(order.design_review?.held_angles ?? []);
   const sendable = reused.filter((a) => !pendingApproval.has(a));
-  const intro = 'Ini gambarnya ya kak.';
+  const intro = "Here's the picture.";
 
   // Approved images go out in slot order.
   const ready = new Map(reused.map((a) => [a, current.get(a)!] as const));
@@ -216,7 +216,7 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
         const latest = await store.getOrder(orderId);
         if (!latest || isAiBlocked(latest)) return;
         const def = angleDef(spec.category, r.angle, spec.construction_type);
-        const label = r.engine === 'offline-svg' ? `${def.label_id} (sketsa konsep, gambar studionya dibantu crafter kami)` : def.label_id;
+        const label = r.engine === 'offline-svg' ? `${def.label} (concept sketch; our crafter will follow up with the studio render)` : def.label;
         const mime = r.url.startsWith('data:') ? r.url.slice(5, r.url.indexOf(';')) : 'image/jpeg';
         await sendToClient(latest, 'AI', sent.length === 0 ? `${intro}\n\n${label}` : label, { type: 'image', url: r.url, mime_type: mime });
         sent.push(r.angle);
@@ -241,8 +241,8 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
       console.error(`[generate_mockup_tool] render for ${orderId} failed:`, err);
       const latest = await store.getOrder(orderId);
       if (latest && !isAiBlocked(latest)) {
-        await sendToClient(latest, 'AI', 'Maaf kak, gambarnya lagi ada kendala teknis. Crafter kami bantu kirimkan langsung ya.');
-        await notifyCrafter(latest, `Render mockup gagal (${err instanceof Error ? err.message : String(err)}); kirim gambar manual ke klien`);
+        await sendToClient(latest, 'AI', "Sorry, we've hit a technical issue with the picture. Our crafter will send it to you directly.");
+        await notifyCrafter(latest, `Mockup render failed (${err instanceof Error ? err.message : String(err)}); send the images to the client manually`);
       }
       return { status: 'FAILED' };
     }
@@ -274,7 +274,7 @@ export async function executeGenerateMockupTool(orderId: string, profile: Crafte
     const fresh = await store.getOrder(orderId);
     if (fresh && !isAiBlocked(fresh)) {
       await sendToClient(fresh, 'AI', renderTemplate(APPROVAL_PENDING_MESSAGE, profile));
-      if (!criticFailed) await notifyCrafter(fresh, `Draft mockup (${staged.length} tampilan) siap ditinjau. Setujui & kirim ke klien dari dashboard.`);
+      if (!criticFailed) await notifyCrafter(fresh, `Draft mockup (${staged.length} views) ready for review. Approve & send to the client from the dashboard.`);
     }
     return { status: 'HELD', held: staged, reused: sent };
   }

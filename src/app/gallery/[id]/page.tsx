@@ -24,20 +24,20 @@ export default async function GalleryPage(props: PageProps<'/gallery/[id]'>) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-leather-500">Mockup desain · {order.order_id}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-leather-500">Design mockups · {order.order_id}</p>
       <h1 className="mt-1 text-3xl font-bold text-stone-900">{modelLine(s)}</h1>
       <p className="mt-1 text-sm text-stone-500">
-        Untuk kak {order.client_info.client_name_wa} · Penawaran {formatIDR(order.pattern_and_bom.suggested_quotation_idr)}
+        For {order.client_info.client_name_wa} · Quotation {formatIDR(order.pattern_and_bom.suggested_quotation_idr)}
       </p>
 
       <div className="mt-8 grid gap-6 md:grid-cols-2">
         {renders.map((r, i) => (
           <figure key={r.angle} className={i === 0 ? 'md:col-span-2' : ''}>
             <div className="overflow-hidden rounded-2xl bg-stone-100 ring-1 ring-stone-200">
-              <img src={r.url} alt={angleDef(s.category, r.angle, s.construction_type).label_id} className="h-full w-full object-contain" />
+              <img src={r.url} alt={angleDef(s.category, r.angle, s.construction_type).label} className="h-full w-full object-contain" />
             </div>
             <figcaption className="mt-2 text-sm text-stone-600">
-              {i + 1}. {angleDef(s.category, r.angle, s.construction_type).label_id}
+              {i + 1}. {angleDef(s.category, r.angle, s.construction_type).label}
               {r.engine === 'offline-svg' && <span className="text-stone-400"> (sketsa konsep)</span>}
             </figcaption>
           </figure>

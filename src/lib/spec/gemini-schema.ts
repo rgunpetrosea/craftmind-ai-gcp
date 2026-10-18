@@ -48,7 +48,7 @@ export function classificationSchema(): Schema {
       description: 'Must belong to craft_category. UNSPECIFIED when the client has not said what product yet.',
     },
     confidence: { type: Type.NUMBER, description: '0..1' },
-    requested_item: { type: Type.STRING, description: 'What the client wants made, in short Indonesian (e.g. "meja makan kayu", "kalung perak"). Empty if unknown.' },
+    requested_item: { type: Type.STRING, description: 'What the client wants made, in short English (e.g. "wooden dining table", "silver necklace"). Empty if unknown.' },
     within_workshop_scope: { type: Type.BOOLEAN, description: 'True if the requested item is something THIS workshop makes (see WORKSHOP PROFILE). True when still unknown.' },
   });
 }

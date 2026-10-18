@@ -9,7 +9,9 @@ import type { ConstructionType, CraftCategory, CrafterProfile, Specifications } 
 
 export interface Offering {
   id: string;
-  /** Indonesian name used in greetings and refusals. */
+  /** English name used in greetings and refusals (client-facing). */
+  label: string;
+  /** Indonesian name. */
   label_id: string;
   category: CraftCategory;
   /** Limit to these form factors; omitted = the whole category. */
@@ -17,17 +19,17 @@ export interface Offering {
 }
 
 export const OFFERINGS: Offering[] = [
-  { id: 'wallets', label_id: 'dompet', category: 'SMALL_GOODS' },
-  { id: 'card_holders', label_id: 'card holder', category: 'SMALL_GOODS', constructions: ['FLAT_CARD_HOLDER', 'PATTERNED_CARD_HOLDER'] },
-  { id: 'bags', label_id: 'tas', category: 'BAG' },
-  { id: 'belts', label_id: 'ikat pinggang', category: 'CUSTOM_GENERIC', constructions: ['BELT'] },
-  { id: 'watch_straps', label_id: 'strap jam', category: 'CUSTOM_GENERIC', constructions: ['WATCH_STRAP'] },
-  { id: 'shoes', label_id: 'sepatu', category: 'FOOTWEAR' },
-  { id: 'furniture', label_id: 'furnitur', category: 'FURNITURE' },
-  { id: 'apparel', label_id: 'jaket & apparel', category: 'CUSTOM_GENERIC', constructions: ['APPAREL'] },
-  { id: 'jewelry', label_id: 'perhiasan', category: 'CUSTOM_GENERIC', constructions: ['JEWELRY'] },
-  { id: 'home_decor', label_id: 'dekorasi rumah', category: 'CUSTOM_GENERIC', constructions: ['HOME_DECOR'] },
-  { id: 'sports_gear', label_id: 'perlengkapan olahraga', category: 'CUSTOM_GENERIC', constructions: ['SPORTS_GEAR'] },
+  { id: 'wallets', label: 'wallets', label_id: 'dompet', category: 'SMALL_GOODS' },
+  { id: 'card_holders', label: 'card holders', label_id: 'card holder', category: 'SMALL_GOODS', constructions: ['FLAT_CARD_HOLDER', 'PATTERNED_CARD_HOLDER'] },
+  { id: 'bags', label: 'bags', label_id: 'tas', category: 'BAG' },
+  { id: 'belts', label: 'belts', label_id: 'ikat pinggang', category: 'CUSTOM_GENERIC', constructions: ['BELT'] },
+  { id: 'watch_straps', label: 'watch straps', label_id: 'strap jam', category: 'CUSTOM_GENERIC', constructions: ['WATCH_STRAP'] },
+  { id: 'shoes', label: 'shoes', label_id: 'sepatu', category: 'FOOTWEAR' },
+  { id: 'furniture', label: 'furniture', label_id: 'furnitur', category: 'FURNITURE' },
+  { id: 'apparel', label: 'jackets & apparel', label_id: 'jaket & apparel', category: 'CUSTOM_GENERIC', constructions: ['APPAREL'] },
+  { id: 'jewelry', label: 'jewelry', label_id: 'perhiasan', category: 'CUSTOM_GENERIC', constructions: ['JEWELRY'] },
+  { id: 'home_decor', label: 'home decor', label_id: 'dekorasi rumah', category: 'CUSTOM_GENERIC', constructions: ['HOME_DECOR'] },
+  { id: 'sports_gear', label: 'sports gear', label_id: 'perlengkapan olahraga', category: 'CUSTOM_GENERIC', constructions: ['SPORTS_GEAR'] },
 ];
 
 export const OFFERING_IDS = OFFERINGS.map((o) => o.id);
@@ -36,18 +38,18 @@ export function allowedOfferings(profile: CrafterProfile): Offering[] {
   return OFFERINGS.filter((o) => profile.allowed_categories.includes(o.id));
 }
 
-/** "dompet, tas, ikat pinggang dan strap jam" */
+/** "wallets, bags, belts and watch straps" */
 export function allowedList(profile: CrafterProfile): string {
-  const labels = allowedOfferings(profile).map((o) => o.label_id);
-  return labels.length <= 1 ? (labels[0] ?? 'produk kustom') : `${labels.slice(0, -1).join(', ')} dan ${labels.at(-1)}`;
+  const labels = allowedOfferings(profile).map((o) => o.label);
+  return labels.length <= 1 ? (labels[0] ?? 'custom products') : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
 }
 
-/** Short craft noun from the primary material: "kerajinan kulit" / "barang kulit". */
+/** Short craft noun from the primary material: "leathercraft" / "leather goods". */
 export function specialty(profile: CrafterProfile): { craft: string; goods: string } {
   const m = profile.primary_material.toLowerCase();
-  if (/leather|kulit/.test(m)) return { craft: 'kerajinan kulit', goods: 'barang kulit' };
-  if (/wood|kayu|furni/.test(m)) return { craft: 'furnitur kayu', goods: 'furnitur kayu' };
-  return { craft: `produk ${profile.primary_material}`, goods: `produk ${profile.primary_material}` };
+  if (/leather|kulit/.test(m)) return { craft: 'leathercraft', goods: 'leather goods' };
+  if (/wood|kayu|furni/.test(m)) return { craft: 'wood furniture', goods: 'wood furniture' };
+  return { craft: `${profile.primary_material} products`, goods: `${profile.primary_material} products` };
 }
 
 /**
@@ -64,9 +66,9 @@ export function isWithinScope(spec: Specifications, profile: CrafterProfile): bo
   );
 }
 
-/** How to name what the client asked for in a refusal ("furnitur kayu", "sepatu"). */
+/** How to name what the client asked for in a refusal ("furniture", "shoes"). */
 export function requestedItemLabel(spec: Specifications): string {
   const offering = OFFERINGS.find((o) => o.category === spec.category && (!o.constructions || o.constructions.includes(spec.construction_type)));
-  if (offering) return offering.label_id;
-  return (constructionDef(spec.construction_type) ? constructionLabel(spec.construction_type) : schemaOf(spec.category).label_id).toLowerCase();
+  if (offering) return offering.label;
+  return (constructionDef(spec.construction_type) ? constructionLabel(spec.construction_type) : schemaOf(spec.category).label).toLowerCase();
 }

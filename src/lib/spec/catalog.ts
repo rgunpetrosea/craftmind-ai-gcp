@@ -373,16 +373,16 @@ export function planConversation(spec: Specifications, progress: IntakeProgress 
 /** Topic keys are namespaced by category so switching category re-asks that category's own details. */
 export const topicKey = (spec: Specifications, topic: LooseTopic) => `${spec.category}:${topic.id}`;
 
-const LEAD_INS = ['Boleh tahu kak,', 'Terus,'];
+const LEAD_INS = ['May I ask,', 'Also,'];
 
-/** One short question bubble per topic ("Boleh tahu kak, biasanya bawa berapa kartu, ...?"). */
+/** One short question bubble per topic ("May I ask, how many cards do you usually carry, ...?"). */
 export function questionBubbles(topics: LooseTopic[]): string[] {
   return topics.map((t, i) => `${LEAD_INS[Math.min(i, LEAD_INS.length - 1)]} ${t.ask}?`);
 }
 
 /** Offline reply: greeting/acknowledgement bubble, then one bubble per question (2-3 bubbles, separated by blank lines). */
 export function templateQuestion(clientName: string, topics: LooseTopic[], isFirstTurn: boolean): string {
-  const opener = isFirstTurn ? `Halo kak ${clientName}, terima kasih sudah menghubungi kami.` : 'Noted kak.';
+  const opener = isFirstTurn ? `Hi ${clientName}, thanks for reaching out.` : 'Noted.';
   return [opener, ...questionBubbles(topics)].join('\n\n');
 }
 
@@ -399,7 +399,7 @@ export function formatValue(field: AnyField, value: AttributeValue): string {
     case 'enum':
       return (field.options as Record<string, string>)[value as string] ?? String(value);
     case 'boolean':
-      return value ? 'Ya' : 'Tidak';
+      return value ? 'Yes' : 'No';
     case 'number':
       return `${value}${field.unit ? ` ${field.unit}` : ''}`;
     default:
@@ -463,7 +463,7 @@ export function finalizeSpecifications(spec: Specifications, presetDefaults: Par
   // Size taken from the form factor's standard (client answered in everyday terms or said "terserah"): say so.
   if (!hadSize && isFieldSet(out, 'dimensions_cm') && out.dimension_mode === 'UNSPECIFIED') {
     out.dimension_mode = 'REFERENCE_BASED';
-    out.reference_object = `ukuran standar ${construction?.label ?? schema.label}`;
+    out.reference_object = `standard ${(construction?.label ?? schema.label).toLowerCase()} size`;
   }
   if (!out.model_name.trim() && construction) out.model_name = construction.label;
   // a direction left to the workshop takes the top recommendation; every concept gets its original feature, functional

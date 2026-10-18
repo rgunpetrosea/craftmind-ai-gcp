@@ -69,22 +69,22 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
     stitching_method: 'Hand saddle stitch',
     embossing_type: 'EMBOSS_INITIALS',
     embossing_text: 'RW',
-    embossing_placement: 'pojok kanan bawah',
+    embossing_placement: 'bottom right corner',
   } satisfies Partial<BagSpec['attributes']>);
   quote(bag, bagSpec);
   const bagMessages = [
-    msg(bag, 1, 'CLIENT', 'Halo kak, mau pesan sling bag custom dong', 94),
-    msg(bag, 2, 'CLIENT', 'Ini sketsanya', 93, { media_type: 'image', media_url: bag.media_assets.original_sketch_url, media_mime_type: 'image/svg+xml' }),
-    msg(bag, 3, 'AI', 'Terima kasih kak Rina! 🙏 Boleh info jenis & warna kulit yang diinginkan?', 92),
-    msg(bag, 4, 'CLIENT', 'Veg-tan coklat 1.6mm, ukuran 30x10x22, jahit tangan, tali lepas pasang ya. Inisial RW di pojok kanan bawah', 90),
-    msg(bag, 5, 'AI', 'Siap kak! Spesifikasi sudah lengkap dan sedang ditinjau crafter kami. Penawaran resmi akan kami kirim segera ✨', 89),
+    msg(bag, 1, 'CLIENT', 'Hi, I would like to order a custom sling bag', 94),
+    msg(bag, 2, 'CLIENT', "Here's my sketch", 93, { media_type: 'image', media_url: bag.media_assets.original_sketch_url, media_mime_type: 'image/svg+xml' }),
+    msg(bag, 3, 'AI', 'Thank you, Rina! Which leather type and colour would you like?', 92),
+    msg(bag, 4, 'CLIENT', 'Brown veg-tan 1.6mm, size 30x10x22, hand-stitched, detachable strap please. Initials RW in the bottom right corner', 90),
+    msg(bag, 5, 'AI', 'Noted! The specification is complete and our crafter is reviewing it. We will send the official quotation shortly.', 89),
   ];
 
   // 2. Wallet → client asked for a human, AI is fully paused.
   const wallet = createDraftOrder('+6281234567002', 'Budi Santoso');
   wallet.order_id = 'ORD-DEMO-WAL01';
   wallet.created_at = minutesAgo(40);
-  const walletSpec: SmallGoodsSpec = { ...(emptySpecifications('SMALL_GOODS') as SmallGoodsSpec), construction_type: 'BIFOLD_WALLET', model_name: 'Dompet bifold' };
+  const walletSpec: SmallGoodsSpec = { ...(emptySpecifications('SMALL_GOODS') as SmallGoodsSpec), construction_type: 'BIFOLD_WALLET', model_name: 'Bifold wallet' };
   walletSpec.attributes.exterior_leather = 'Epsom Etoupe';
   Object.assign(wallet, {
     craft_category: 'SMALL_GOODS',
@@ -94,11 +94,11 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
     escalation_reason: 'CLIENT_REQUEST',
   } satisfies Partial<OrderPayload>);
   const walletMessages = [
-    msg(wallet, 1, 'CLIENT', 'Mau dompet bifold Epsom etoupe', 39),
-    msg(wallet, 2, 'AI', 'Terima kasih kak Budi! Boleh info ukuran perkiraan dan jumlah slot kartunya?', 38),
-    msg(wallet, 3, 'CLIENT', 'Bisa bicara dengan admin langsung? Mau tanya grafir inisial', 36),
-    msg(wallet, 4, 'SYSTEM', 'Baik kak, percakapan ini kami teruskan ke crafter kami. Mohon ditunggu sebentar ya 🙏', 36),
-    msg(wallet, 5, 'CLIENT', 'Inisial "BS" di pojok kanan bawah bisa?', 35, { awaiting_crafter_review: true }),
+    msg(wallet, 1, 'CLIENT', 'I would like a bifold wallet in Epsom etoupe', 39),
+    msg(wallet, 2, 'AI', 'Thank you, Budi! Roughly what size, and how many card slots would you like?', 38),
+    msg(wallet, 3, 'CLIENT', 'Can I talk to the crafter directly? I have a question about engraving initials', 36),
+    msg(wallet, 4, 'SYSTEM', "Of course, I'm passing this chat to our crafter. They will be with you shortly.", 36),
+    msg(wallet, 5, 'CLIENT', 'Can you do the initials "BS" in the bottom right corner?', 35, { awaiting_crafter_review: true }),
   ];
 
   // 3. Derby shoes → approved last week.
@@ -116,8 +116,8 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
   } satisfies Partial<FootwearSpec['attributes']>);
   quote(shoes, shoeSpec);
   const shoeMessages = [
-    msg(shoes, 1, 'CLIENT', 'Mau derby crazy horse cognac ukuran 42, kaki saya lebar, sol dainite ya', 60 * 24 * 6),
-    msg(shoes, 2, 'AI', 'Siap kak Andi! Spesifikasi sudah lengkap dan sedang ditinjau crafter kami.', 60 * 24 * 6 - 1),
+    msg(shoes, 1, 'CLIENT', 'I would like crazy horse cognac derbies, size 42, I have wide feet, Dainite sole please', 60 * 24 * 6),
+    msg(shoes, 2, 'AI', 'Noted, Andi! The specification is complete and our crafter is reviewing it.', 60 * 24 * 6 - 1),
   ];
 
   // 4. Teak dining table → furniture schema (no leather fields at all), pending approval.
@@ -126,22 +126,22 @@ export function buildDemoSeed(presets: CategoryPreset[], inventory: InventoryIte
   table.order_id = 'ORD-DEMO-FUR01';
   table.created_at = minutesAgo(180);
   table.session_state = 'PENDING_CRAFTER_APPROVAL';
-  const tableSpec: FurnitureSpec = { ...(emptySpecifications('FURNITURE') as FurnitureSpec), construction_type: 'DINING_TABLE', model_name: 'Meja makan jati 6 kursi' };
+  const tableSpec: FurnitureSpec = { ...(emptySpecifications('FURNITURE') as FurnitureSpec), construction_type: 'DINING_TABLE', model_name: 'Teak dining table for 6' };
   Object.assign(tableSpec.attributes, {
     dimensions_cm: { length: 180, width: 90, height: 75 },
-    primary_material: 'Jati (teak) grade A',
-    secondary_material: 'kaki besi hollow',
+    primary_material: 'Teak, grade A',
+    secondary_material: 'hollow steel legs',
     finish_coating: 'NATURAL_OIL',
     joinery_type: 'MORTISE_TENON',
     seating_capacity: 6,
   } satisfies Partial<FurnitureSpec['attributes']>);
-  tableSpec.custom_fields = [{ id: 'cf-seed-1', label: 'Sudut meja', value: 'Dibulatkan radius 5 cm (ada balita)', surcharge_idr: 0, source: 'AI' }];
+  tableSpec.custom_fields = [{ id: 'cf-seed-1', label: 'Table corners', value: 'Rounded, 5 cm radius (toddler at home)', surcharge_idr: 0, source: 'AI' }];
   quote(table, tableSpec);
   const tableMessages = [
-    msg(table, 1, 'CLIENT', 'Mas, bisa bikin meja makan jati grade A 180x90x75 untuk 6 kursi? Kakinya besi hollow', 180),
-    msg(table, 2, 'AI', 'Bisa kak Maya! Untuk finishing mau natural oil atau PU varnish? Sambungannya kami sarankan purus (mortise-tenon) supaya kokoh.', 179),
-    msg(table, 3, 'CLIENT', 'Natural oil aja, purus boleh. Sudutnya tolong dibulatkan ya ada balita', 175),
-    msg(table, 4, 'AI', 'Siap kak! Spesifikasi sudah lengkap dan sedang ditinjau crafter kami ✨', 174),
+    msg(table, 1, 'CLIENT', 'Can you make a grade A teak dining table, 180x90x75, for 6 chairs? With hollow steel legs', 180),
+    msg(table, 2, 'AI', 'We can, Maya! Would you like a natural oil or PU varnish finish? We recommend mortise-and-tenon joints so it stays sturdy.', 179),
+    msg(table, 3, 'CLIENT', 'Natural oil, and mortise-and-tenon is fine. Please round the corners, we have a toddler', 175),
+    msg(table, 4, 'AI', 'Noted! The specification is complete and our crafter is reviewing it.', 174),
   ];
 
   const conv = (o: OrderPayload): Conversation => ({

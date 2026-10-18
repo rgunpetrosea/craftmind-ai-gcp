@@ -311,5 +311,5 @@ export function parseBoardPreference(text: string): string | undefined {
   return undefined;
 }
 
-export const DECLINE = /^\s*(ga|gak|nggak|enggak|tidak|no|skip|nope)\b|terserah|bebas|ikut (aja|standar|workshop|mas|kakak)|standar( aja)?\b|apa aja|seadanya|default/i;
-export const FINISHED = /itu (saja|aja)|udah (segitu|cukup)|sudah (segitu|cukup)|cukup (segitu|itu)/i;
+export const DECLINE = /^\s*(ga|gak|nggak|enggak|tidak|no|skip|nope)\b|terserah|bebas|ikut (aja|standar|workshop|mas|kakak)|standar( aja)?\b|apa aja|seadanya|default|\bwhatever\b|up to you|you (decide|choose|pick)|\bno preference\b|\bstandard( is fine| one)?\b|\banything (is )?fine\b|\bdoesn'?t matter\b|\bdon'?t mind\b/i;
+export const FINISHED = /itu (saja|aja)|udah (segitu|cukup)|sudah (segitu|cukup)|cukup (segitu|itu)|that'?s (all|it|everything)|nothing else|\bi'?m done\b|that should be (all|it)/i;

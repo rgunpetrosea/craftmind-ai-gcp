@@ -28,7 +28,7 @@ export const GROUP_LABEL: Record<FieldGroup, string> = {
 
 interface FieldBase<A, V> {
   label: string;
-  /** Indonesian label used in the WhatsApp spec card. */
+  /** Indonesian label (the WhatsApp spec card uses the English `label`). */
   label_id: string;
   group: FieldGroup;
   /** Extraction guidance for Gemini (becomes the responseSchema description). */
@@ -107,7 +107,7 @@ export interface TopicDef<C extends CraftCategory> {
   id: string;
   /** Short chip label (simulator checklist). */
   label: string;
-  /** Indonesian question fragment, used verbatim offline and as guidance for Gemini. */
+  /** English question fragment (client-facing), used verbatim offline and as guidance for Gemini. */
   ask: string;
   required: boolean;
   fields: Array<keyof AttributesByCategory[C] & string>;

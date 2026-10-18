@@ -21,7 +21,7 @@ const OFF_TOPIC =
  * Product / material words that make a message about crafting. Generic verbs ("bikin", "buatin") are deliberately not
  * here: "tolong buatin kode python" is not a crafting request.
  */
-const CRAFT_SIGNAL = /\b(jahit|kulit|leather|kayu|dompet|tas|sepatu|ikat pinggang|strap|furnitur|meja|kursi|lemari|mockup|emboss|resleting|sleting)\b/i;
+const CRAFT_SIGNAL = /\b(jahit|kulit|leather|kayu|wood|dompet|wallet|tas|bag|sepatu|shoes?|ikat pinggang|belt|strap|furnitur|furniture|meja|table|kursi|chair|lemari|cabinet|wardrobe|mockup|emboss|resleting|sleting|zipper|stitch\w*)\b/i;
 
 export function detectIntent(text: string): MessageIntent {
   if (!text.trim()) return 'CRAFT_REQUEST';
@@ -32,21 +32,21 @@ export function detectIntent(text: string): MessageIntent {
 
 /** First-turn brand anchor (bubble 1). */
 export function greetingBubble(profile: CrafterProfile): string {
-  return `Halo kak, selamat datang di ${profile.workshop_name}! Kami spesialis bespoke ${profile.primary_material} seperti ${allowedList(profile)}.`;
+  return `Hi, welcome to ${profile.workshop_name}! We specialise in bespoke ${profile.primary_material}, such as ${allowedList(profile)}.`;
 }
 
 /** First-turn bubble 2 when the client hasn't said what they want yet. */
-export const PRODUCT_QUESTION = 'Kira-kira lagi ada rencana mau bikin barang kustom apa nih kak?';
+export const PRODUCT_QUESTION = 'What custom piece did you have in mind?';
 
 /** Non-crafting or malicious message: one short message, redirect to custom crafting. */
 export function refusalMessage(profile: CrafterProfile): string {
-  return `Waduh maaf kak, aku cuma bisa bantu buat konsultasi dan pemesanan produk kustom di ${profile.workshop_name} aja nih. Ada ide barang yang mau dibikin?`;
+  return `Sorry, I can only help with consultations and custom orders at ${profile.workshop_name}. Is there a piece you'd like us to make?`;
 }
 
 /** A product this workshop doesn't make: say what it does make. */
 export function mismatchMessage(profile: CrafterProfile, requestedItem: string): string {
   const { craft, goods } = specialty(profile);
-  return `Wah kalau untuk ${requestedItem} kita belum bisa kak. Di ${profile.workshop_name} kita khusus bikin ${craft} kustom (${allowedList(profile)}). Siapa tahu ada rencana bikin ${goods}, boleh banget!`;
+  return `Sorry, ${requestedItem} isn't something we make. At ${profile.workshop_name} we focus on custom ${craft} (${allowedList(profile)}). If you're ever planning ${goods}, we'd love to help!`;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,10 +75,10 @@ export const MAX_CRAFTER_RENDERS_PER_ORDER = Number(process.env.MAX_CRAFTER_REND
 
 /**
  * The tenant's crafter as the client knows them: honorific + name from the active crafter profile ("Mas Fendy",
- * "Bu Sari"), or "crafter kami" when the profile has no name. Never hardcode a name in a template.
+ * "Bu Sari"), or "our crafter" when the profile has no name. Never hardcode a name in a template.
  */
 export function crafterLabel(profile: CrafterProfile): string {
-  return profile.crafter_name?.trim() ? [profile.crafter_honorific, profile.crafter_name.trim()].filter(Boolean).join(' ') : 'crafter kami';
+  return profile.crafter_name?.trim() ? [profile.crafter_honorific, profile.crafter_name.trim()].filter(Boolean).join(' ') : 'our crafter';
 }
 
 /** Tenant variable in hand-over templates, bound per order to the active crafter profile. */
@@ -86,25 +86,25 @@ export const ACTIVE_CRAFTER_NAME = '{{active_crafter_name}}';
 
 /** Hand-over templates; `{{active_crafter_name}}` is filled from the order's crafter profile by `renderTemplate`. */
 export const HANDOVER_TEMPLATES = {
-  TURN_WARNING: 'Biar makin cepat dan pas, aku bantu hubungkan langsung ke {{active_crafter_name}} untuk selesaikan detailnya ya kak.',
-  SESSION_CAP: 'Rangkuman obrolan kita sudah tak teruskan ke {{active_crafter_name}} ya kak. Beliau akan langsung melanjutkan chat ini sebentar lagi!',
+  TURN_WARNING: 'To keep things quick and accurate, let me connect you directly with {{active_crafter_name}} to finish the details.',
+  SESSION_CAP: "I've passed a summary of our chat to {{active_crafter_name}}, who will pick up this conversation shortly!",
   MOCKUP_CAP:
-    'Untuk revisi visual lanjutan, {{active_crafter_name}} yang bakal bantu buatkan sketsa detailnya secara langsung ya kak, supaya lebih akurat secara teknis produksi.',
+    'For further visual revisions, {{active_crafter_name}} will prepare the detailed sketch personally, so it is accurate for production.',
   LOOP_HANDOVER:
-    'Sepertinya ada beberapa detail teknis yang perlu didiskusikan langsung nih. Tak hubungkan ke {{active_crafter_name}} ya kak biar dihitung spesifikasi pasnya!',
+    'It looks like a few technical details are best discussed directly. Let me connect you with {{active_crafter_name}} to work out the exact specification!',
   /** The design critic failed the concept after its automatic revisions: the renders wait for the crafter. */
   CONCEPT_HOLD:
-    'Konsep gambarnya lagi aku rapikan dulu bareng {{active_crafter_name}} supaya proporsi dan detailnya benar-benar pas ya kak. Begitu sudah dicek, gambarnya langsung kami kirim di sini.',
+    "I'm refining the concept with {{active_crafter_name}} so the proportions and details are exactly right. As soon as it's checked, we'll send the images here.",
   /** The client asked for a picture; the critic still wants changes, so the best pass goes out labelled as a draft. */
   DRAFT_CONCEPT:
-    'Ini draft konsep awalnya dulu ya kak. Detail dan proporsinya masih aku sempurnakan bareng {{active_crafter_name}}, nanti versi yang sudah dicek aku kirim lagi.',
+    "Here's an early draft of the concept. I'm still refining the details and proportions with {{active_crafter_name}}, and I'll send the checked version afterwards.",
 } as const;
 
 export const CONCEPT_HOLD_MESSAGE = HANDOVER_TEMPLATES.CONCEPT_HOLD;
 
 /** Sent instead of the images: every new mockup is reviewed by the crafter before the client sees it. */
 export const APPROVAL_PENDING_MESSAGE =
-  'Draft konsepnya sudah aku buatkan dan sedang ditinjau sebentar oleh Crafter kami untuk memastikan kelayakan konstruksinya ya kak.';
+  "Your concept draft is ready and our crafter is giving it a quick review to make sure it can be built as designed. I'll send it over right after.";
 export const DRAFT_CONCEPT_MESSAGE = HANDOVER_TEMPLATES.DRAFT_CONCEPT;
 
 export function renderTemplate(template: string, profile: CrafterProfile): string {
@@ -132,7 +132,7 @@ export function loopHandoverMessage(profile: CrafterProfile): string {
  * terbukanya", "gambar bagian dalamnya dong"); `angleForRequest()` then picks that view's slot.
  */
 export const VISUAL_REQUEST =
-  /\b(gambar|gambaran|mockup|render|visual|desain|foto)\w*\b[^.?!\n]{0,30}\b(lagi|revisi|ganti|ubah|baru|lain|dong|lihat|liat|terbuka\w*|tertutup|bagian dalam\w*|dalamnya|interior|slot|samping|detail|jahitan\w*)\b|\b(revisi|ganti|ubah)\b[^.?!\n]{0,15}\b(gambar|mockup|desain|visual)\w*|\b(kirim|kirimin|lihat|liat|tunjuk\w*|tampilkan)\w*\b[^.?!\n]{0,15}\b(gambar|gambaran|mockup|desain|visual|posisi terbuka|terbuka\w*|bagian dalam\w*|dalamnya|interior|slot ?kartu\w*|detail jahitan|tampak)\w*|\b(posisi|kondisi) terbuka\w*\b[^.?!\n]{0,20}\b(gimana|kayak apa|seperti apa|dong)\b/i;
+  /\b(gambar|gambaran|mockup|render|visual|desain|foto)\w*\b[^.?!\n]{0,30}\b(lagi|revisi|ganti|ubah|baru|lain|dong|lihat|liat|terbuka\w*|tertutup|bagian dalam\w*|dalamnya|interior|slot|samping|detail|jahitan\w*)\b|\b(revisi|ganti|ubah)\b[^.?!\n]{0,15}\b(gambar|mockup|desain|visual)\w*|\b(kirim|kirimin|lihat|liat|tunjuk\w*|tampilkan)\w*\b[^.?!\n]{0,15}\b(gambar|gambaran|mockup|desain|visual|posisi terbuka|terbuka\w*|bagian dalam\w*|dalamnya|interior|slot ?kartu\w*|detail jahitan|tampak)\w*|\b(posisi|kondisi) terbuka\w*\b[^.?!\n]{0,20}\b(gimana|kayak apa|seperti apa|dong)\b|\b(show|send|see|view)\b[^.?!\n]{0,25}\b(picture|image|photo|mockup|render|drawing|sketch|design|draft|visual|inside|interior|open\w*|closed|side view|details?|stitch\w*)\b|\b(can|could|may) i see\b|\bwhat (would|does|will) it look like\b|\b(another|new|updated|revised) (picture|image|mockup|render|version)\b/i;
 
 /**
  * The client leaves the design to us or wants a picture right away ("langsung gambarin aja", "pilihin aja", "terserah",
@@ -140,22 +140,22 @@ export const VISUAL_REQUEST =
  * applied and open deferrable topics take workshop defaults (Design Intelligence Layer v2, section 8, non-blocking).
  */
 export const AUTO_DECIDE =
-  /\blangsung\s+(aja\s+|saja\s+)?(di)?(gambar\w*|render\w*|(buat|bikin)\w*\s+(gambar|desain|mockup)\w*)|\bgambar(in|kan)\b|\bpilih(in|kan)\b|\bterserah\b|\bbebas\s+aja\b|\b(ikut|sesuai)\s+(rekomendasi|saran)\w*/i;
+  /\blangsung\s+(aja\s+|saja\s+)?(di)?(gambar\w*|render\w*|(buat|bikin)\w*\s+(gambar|desain|mockup)\w*)|\bgambar(in|kan)\b|\bpilih(in|kan)\b|\bterserah\b|\bbebas\s+aja\b|\b(ikut|sesuai)\s+(rekomendasi|saran)\w*|\bjust (draw|render|show|sketch|design)\b|\b(draw|render|sketch) (it|one|something)\b|\byou (choose|pick|decide)\b|\b(up to you|surprise me|your call|dealer'?s choice)\b|\b(go|going) with (your|the) (recommendation|suggestion|pick)\b/i;
 
 /**
  * The client asks to change the design ("ganti slot kartunya jadi miring", "embossnya hapus aja", "warnanya dibikin
  * two-tone"). After a draft was shown this re-renders the mockup with the change.
  */
 export const CHANGE_REQUEST =
-  /\b(ganti|diganti|gantiin|ubah|diubah|ubahin|revisi|tukar|jadiin|dijadiin|dijadikan|dibikin|dibuat|bikinin|buatin|tambah\w*|kurangi\w*|dikurangi|hapus\w*|dihapus|hilangkan|dihilangkan|ga usah|gak usah|nggak usah|enggak usah|change|make it|replace|remove|add)\b/i;
+  /\b(ganti|diganti|gantiin|ubah|diubah|ubahin|revisi|tukar|jadiin|dijadiin|dijadikan|dibikin|dibuat|bikinin|buatin|tambah\w*|kurangi\w*|dikurangi|hapus\w*|dihapus|hilangkan|dihilangkan|ga usah|gak usah|nggak usah|enggak usah|change|make it|replace|remove|add|swap|switch|instead|no need for|get rid of|drop the)\b/i;
 
 /** Corrections and feedback on the design: they are revisions, never "unproductive". */
 const DESIGN_FEEDBACK =
-  /\b(salah(?!\s+satu)|keliru|bukan (gitu|begitu|yang itu|kayak gitu)|revisi\w*|koreksi|maksud(nya|ku| saya| aku)|harusnya|seharusnya|mestinya|kurang pas|kurang sesuai)\b/i;
+  /\b(salah(?!\s+satu)|keliru|bukan (gitu|begitu|yang itu|kayak gitu)|revisi\w*|koreksi|maksud(nya|ku| saya| aku)|harusnya|seharusnya|mestinya|kurang pas|kurang sesuai|wrong|not what i (meant|asked|wanted)|i meant|should (be|have)|doesn'?t (match|fit|look right)|not quite)\b/i;
 
 /** Product, material, colour, feature and size vocabulary (Indonesian + English). */
 const DESIGN_ENTITY =
-  /\b(dompet|wallet|bifold|trifold|card ?holder|kartu|slot|tas|bag|ransel|backpack|tote|sling|clutch|folio|pouch|sepatu|shoes?|boots?|sandal|ikat pinggang|sabuk|belt|strap|tali|gelang|meja|kursi|lemari|rak|sofa|kulit|leather|buaya|croc\w*|python|ular|ostrich|suede|nubuck|veg ?-?tan|nappa|epsom|saffiano|pull ?-?up|crazy ?horse|exotic|kayu|jati|mahoni|walnut|besi|warna\w*|gradasi|two[- ]?tone|hitam|coklat|cokelat|navy|merah|hijau|biru|abu|putih|krem|cream|emboss\w*|logo|inisial|grafir|motif|tekstur|jahit\w*|benang|resleting|sleting|zip\w*|kancing|magnet|saku|kantong|pocket|lining|furing|pinggiran|edge|ukuran\w*|panjang|lebar|tinggi|tebal|tipis|besar|kecil|gusset|handle|gagang|gesper|hardware|desain\w*|model\w*|bentuk\w*|gambar\w*|mockup)\b/i;
+  /\b(dompet|wallet|bifold|trifold|card ?holder|kartu|cards?|slot|tas|bag|ransel|backpack|tote|sling|clutch|folio|pouch|sepatu|shoes?|boots?|sandal|ikat pinggang|sabuk|belt|strap|tali|gelang|meja|kursi|lemari|rak|sofa|table|chair|desk|cabinet|wardrobe|kitchen|shelf|kulit|leather|wood|teak|buaya|croc\w*|python|ular|ostrich|suede|nubuck|veg ?-?tan|nappa|epsom|saffiano|pull ?-?up|crazy ?horse|exotic|kayu|jati|mahoni|walnut|besi|warna\w*|colou?rs?|gradasi|two[- ]?tone|hitam|coklat|cokelat|navy|merah|hijau|biru|abu|putih|krem|cream|black|brown|tan|red|green|blue|grey|gray|white|beige|emboss\w*|logo|inisial|grafir|motif|tekstur|jahit\w*|benang|resleting|sleting|zip\w*|kancing|magnet|saku|kantong|pockets?|lining|furing|pinggiran|edge|ukuran\w*|size|panjang|lebar|tinggi|tebal|tipis|besar|kecil|long|wide|tall|thick|thin|slim|big|small|large|gusset|handle|gagang|gesper|buckle|zipper|hardware|desain\w*|design\w*|model\w*|bentuk\w*|shape|gambar\w*|mockup)\b/i;
 
 /**
  * Does this (debounced, combined) client input carry design context: feedback or corrections, a change request, a

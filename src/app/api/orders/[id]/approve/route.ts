@@ -49,28 +49,28 @@ export async function POST(request: NextRequest, ctx: RouteContext<'/api/orders/
   const src = order.material_sourcing;
   const leadDays = LEAD_DAYS[s.category] + src.additional_lead_days;
   const text = [
-    `*PENAWARAN RESMI — ${order.order_id}*`,
-    `Halo kak ${order.client_info.client_name_wa}, berikut penawaran dari workshop kami:`,
+    `*OFFICIAL QUOTATION — ${order.order_id}*`,
+    `Hi ${order.client_info.client_name_wa}, here is our workshop's quotation:`,
     '',
-    `• Produk: ${modelLine(s)}`,
+    `• Product: ${modelLine(s)}`,
     ...designLines(s),
     ...specLines(s),
-    `• ${schemaOf(s.category).material_label} terpakai: ±${order.pattern_and_bom.estimated_material_sqft} sqft`,
-    src.status === 'SPECIAL_SOURCING_NEEDED' ? `• Material perlu dipesan khusus (+${src.additional_lead_days} hari)` : '• Material tersedia di workshop',
-    s.dimension_mode === 'PENDING_SITE_VISIT' ? '• Harga sementara: final setelah survei ukur ke lokasi (biaya survei sudah termasuk)' : null,
-    s.dimension_mode === 'REFERENCE_BASED' ? `• Ukuran mengacu pada ${s.reference_object}; mohon konfirmasi sebelum produksi` : null,
+    `• ${schemaOf(s.category).material_label} used: ±${order.pattern_and_bom.estimated_material_sqft} sqft`,
+    src.status === 'SPECIAL_SOURCING_NEEDED' ? `• Material needs special sourcing (+${src.additional_lead_days} days)` : '• Material in stock at the workshop',
+    s.dimension_mode === 'PENDING_SITE_VISIT' ? '• Provisional price: final after the on-site measurement visit (visit fee included)' : null,
+    s.dimension_mode === 'REFERENCE_BASED' ? `• Size based on ${s.reference_object}; please confirm before production` : null,
     '',
-    `*Harga: ${formatIDR(order.pattern_and_bom.suggested_quotation_idr)}*`,
-    `Estimasi pengerjaan: ±${leadDays} hari setelah DP 50%.`,
-    galleryUrl ? `\n📸 Mockup desain (${gallery.length} tampilan) kami kirim di bawah ini, atau lihat galerinya: ${galleryUrl}` : null,
-    body.note?.trim() ? `\nCatatan crafter: ${body.note.trim()}` : null,
+    `*Price: ${formatIDR(order.pattern_and_bom.suggested_quotation_idr)}*`,
+    `Estimated lead time: ±${leadDays} days after a 50% deposit.`,
+    galleryUrl ? `\n📸 Design mockups (${gallery.length} views) are below, or view the gallery: ${galleryUrl}` : null,
+    body.note?.trim() ? `\nCrafter's note: ${body.note.trim()}` : null,
   ]
     .filter((line) => line !== null)
     .join('\n');
 
   await sendToClient(order, 'CRAFTER', text);
   for (const [i, r] of gallery.entries()) {
-    const caption = `📸 ${i + 1}/${gallery.length} · ${angleDef(s.category, r.angle, s.construction_type).label_id}${r.engine === 'offline-svg' ? ' (sketsa konsep)' : ''}`;
+    const caption = `📸 ${i + 1}/${gallery.length} · ${angleDef(s.category, r.angle, s.construction_type).label}${r.engine === 'offline-svg' ? ' (concept sketch)' : ''}`;
     await sendToClient(order, 'CRAFTER', caption, { type: 'image', url: r.url, mime_type: mimeOf(r.url) });
   }
 

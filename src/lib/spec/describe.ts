@@ -1,6 +1,6 @@
 import { constructionLabel, describeFields, schemaOf } from '@/lib/spec/catalog';
 import { dimensionNote } from '@/lib/spec/dimensions';
-import { directionDef, directionFeel, isDirectionSet } from '@/lib/spec/directions';
+import { directionDef, directionFeel, isDirectionSet, originalFeaturePrompt } from '@/lib/spec/directions';
 import type { Specifications } from '@/lib/types';
 
 /** Client-facing text built from the active category's schema: only filled, relevant fields appear. */
@@ -15,13 +15,13 @@ export function modelLine(s: Specifications): string {
 }
 
 /** "• Label: value" lines for every set field, then custom fields. */
-export function specLines(s: Specifications, lang: 'id' | 'en' = 'id'): string[] {
+export function specLines(s: Specifications, lang: 'id' | 'en' = 'en'): string[] {
   const fields = describeFields(s).map(({ key, field, text }) => {
     const note = key === 'dimensions_cm' && s.dimension_mode !== 'EXACT_CM' ? dimensionNote(s) : '';
     return `• ${lang === 'id' ? field.label_id : field.label}: ${text}${note ? ` (${note})` : ''}`;
   });
   // A size still to be measured on site has no value yet but must appear on the card.
-  if (s.dimension_mode === 'PENDING_SITE_VISIT' && !describeFields(s).some((f) => f.key === 'dimensions_cm')) fields.unshift('• Ukuran: menunggu survei ukur di lokasi');
+  if (s.dimension_mode === 'PENDING_SITE_VISIT' && !describeFields(s).some((f) => f.key === 'dimensions_cm')) fields.unshift(lang === 'id' ? '• Ukuran: menunggu survei ukur di lokasi' : '• Size: awaiting on-site measurement');
   const custom = s.custom_fields.map((f) => `• ${f.label}: ${f.value}`);
   return [...fields, ...custom];
 }
@@ -29,20 +29,20 @@ export function specLines(s: Specifications, lang: 'id' | 'en' = 'id'): string[]
 /** WhatsApp spec card sent when the specification is locked. */
 export function specCardText(clientName: string, s: Specifications, opts: { updated?: boolean } = {}): string {
   return [
-    opts.updated ? `Noted kak ${clientName}, ringkasannya sudah kami perbarui:` : `Noted kak ${clientName}, ini ringkasan pesanannya ya:`,
+    opts.updated ? `Noted, ${clientName}. Here's the updated summary:` : `Noted, ${clientName}. Here's a summary of your order:`,
     '',
-    [`• Model: ${modelLine(s)} (${schemaOf(s.category).label_id})`, ...designLines(s), ...specLines(s)].join('\n'),
+    [`• Model: ${modelLine(s)} (${schemaOf(s.category).label})`, ...designLines(s), ...specLines(s)].join('\n'),
     '',
-    'Crafter kami cek dulu desain dan harganya. Nanti penawarannya kami kirim di sini.',
+    'Our crafter will review the design and pricing first, then we will send the quotation here.',
   ].join('\n');
 }
 
-/** "• Arah desain: ..." / "• Ciri original: ..." lines of the spec card (only once a direction is chosen). */
+/** "• Design feel: ..." / "• Signature detail: ..." lines of the spec card (only once a direction is chosen). */
 export function designLines(s: Specifications): string[] {
   const d = directionDef(s.design_direction);
   if (!d) return [];
   const sec = isDirectionSet(s.secondary_direction) && s.secondary_direction !== s.design_direction ? directionFeel(s.secondary_direction) : '';
-  return [`• Nuansa desain: ${d.feel}${sec ? ` + ${sec}` : ''}`, ...(s.originality_feature.trim() ? [`• Detail khas: ${s.originality_feature.trim()}`] : [])];
+  return [`• Design feel: ${d.feel}${sec ? ` + ${sec}` : ''}`, ...(s.originality_feature.trim() ? [`• Signature detail: ${originalFeaturePrompt(s.originality_feature)}`] : [])];
 }
 
 /**
@@ -52,13 +52,13 @@ export function designLines(s: Specifications): string[] {
 export function conceptPresentation(s: Specifications, pending: string[] = []): string {
   const d = directionDef(s.design_direction);
   return [
-    '*Konsep desain yang sudah dicek crafter kami*',
-    d ? `• Nuansa desain: ${d.feel} (${d.pitch})` : null,
-    s.originality_feature.trim() ? `• Detail khas: ${s.originality_feature.trim()}` : null,
-    primaryMaterial(s) ? `• Material utama: ${primaryMaterial(s)}` : null,
-    s.functional_advantage.trim() ? `• Keunggulan: ${s.functional_advantage.trim()}` : null,
-    pending.length ? `• Masih perlu dikonfirmasi: ${pending.join(', ')}` : null,
-    'Gambar ini konsep visual, bukan jaminan hasil produksi final.',
+    '*Design concept reviewed by our crafter*',
+    d ? `• Design feel: ${d.feel} (${d.pitch})` : null,
+    s.originality_feature.trim() ? `• Signature detail: ${originalFeaturePrompt(s.originality_feature)}` : null,
+    primaryMaterial(s) ? `• Main material: ${primaryMaterial(s)}` : null,
+    s.functional_advantage.trim() ? `• Key benefit: ${s.functional_advantage.trim()}` : null,
+    pending.length ? `• Still to confirm: ${pending.join(', ')}` : null,
+    'These images are a visual concept, not a guarantee of the final production piece.',
   ]
     .filter((l) => l !== null)
     .join('\n');
