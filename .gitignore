@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# pitch decks, PDFs and submission documents (kept local only)
+docs/
